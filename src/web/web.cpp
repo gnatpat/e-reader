@@ -405,7 +405,7 @@ static void handleMoveBook() {
     return;
   }
 
-  migrateBookMetadata(oldPath, newPath);
+  renameBook(oldPath, newPath);
   resetOffsetCache();
   if (wasCurrent) g_reader.file = FS.open(newPath, "r");
 
@@ -440,7 +440,7 @@ static void handleJumpPageWeb() {
     resetSaveThrottle();
     saveProgressThrottled(true);
     if (g_reader.file) {
-      savePageOffsetCacheForBook(g_reader.currentBookPath, g_reader.file.size());
+      savePageOffsetCacheForBook(g_reader.currentBookPath, g_reader.file.size(), g_reader.pages);
     }
   }
 
@@ -968,10 +968,11 @@ static void handleSettingsPost() {
   }
 
   if (layoutChanged) {
-    // invalidateAllPageCaches() already resets pageIndex to 0 for the open book.
-    // Call it BEFORE renderCurrentPage() so the page is redrawn from byte 0
-    // with the new font metrics -- not from the now-invalid old page number.
-    invalidateAllPageCaches();
+    // resetAllPagination() wipes caches AND resets the open reader's
+    // pageIndex to 0. Call it BEFORE renderCurrentPage() so the page is
+    // redrawn from byte 0 with the new font metrics -- not from the
+    // now-invalid old page number.
+    resetAllPagination();
     if (g_currentScreen == &g_readerScreen || g_currentScreen == &g_bmPreviewScreen) {
       if (g_currentScreen != &g_readerScreen) g_currentScreen->nextScreen = &g_readerScreen;
       else renderCurrentPage();

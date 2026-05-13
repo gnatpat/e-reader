@@ -1,53 +1,16 @@
 #include "storage/book_state.h"
 
-#include "hal/display.h"                // g_toast — resetUiEphemeralState clears it
-#include "storage/bookmarks.h"          // loadBookmarks / saveBookmarks
+#include "storage/bookmarks.h"          // clearBookMetadata / renameBookMetadata
 #include "storage/library.h"            // g_library, BookInfo
 #include "storage/page_cache.h"         // pageCachePathForBook
-#include "ui/reader.h"                  // g_reader — these helpers are its lifecycle
 #include "storage/preferences_store.h"
 #include "pure/hashing.h"
 #include "pure/paths.h"
 
-
-void safeCloseCurrentBook() {
-  if (g_reader.file) g_reader.file.close();
-}
-
-void clearCurrentBookState() {
-  safeCloseCurrentBook();
-  g_reader.currentBookKey = "";
-  g_reader.currentBookPath = "";
-  g_reader.pageIndex = 0;
-  g_reader.knownPages = 0;
-  g_reader.eofReached = false;
-  g_reader.lastPageStartOffset = 0;
-  g_reader.pageTurnsSinceFull = 0;
-  g_reader.lastSaveMs = 0;
-  g_reader.lastSavedPage = -1;
-}
-
-bool reopenCurrentBookIfNeeded() {
-  if (g_reader.currentBookPath.length() == 0) return false;
-  safeCloseCurrentBook();
-  g_reader.file = FS.open(g_reader.currentBookPath, "r");
-  return (bool)g_reader.file;
-}
-
-void resetUiEphemeralState() {
-  g_toast.msg = "";
-  g_toast.untilMs = 0;
-}
-
-void resetNavigationState() {
-  g_library.currentFolder = "";
-  g_library.selectedItem = 0;
-}
-
-void syncWakeState(bool reading) {
+void syncWakeState(bool reading, const String& path) {
   prefs.putInt("wake_mode", reading ? 1 : 0);
-  if (reading && g_reader.currentBookPath.length() > 0) {
-    prefs.putString("wake_path", g_reader.currentBookPath);
+  if (reading && path.length() > 0) {
+    prefs.putString("wake_path", path);
   } else {
     prefs.remove("wake_path");
   }
@@ -99,10 +62,5 @@ void migrateBookMetadata(const String& oldPath, const String& newPath) {
 
   if (prefs.getString("wake_path", "") == oldPath) {
     prefs.putString("wake_path", newPath);
-  }
-
-  if (g_reader.currentBookPath == oldPath) {
-    g_reader.currentBookPath = newPath;
-    g_reader.currentBookKey = newKey;
   }
 }

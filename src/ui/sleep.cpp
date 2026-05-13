@@ -11,6 +11,7 @@
 #include "hal/display.h"
 #include "storage/book_state.h"
 #include "ui/pala_one_sleep_black_icon_v4.h"
+#include "ui/reader.h"     // safeCloseCurrentBook
 #include "ui/screen.h"
 
 void drawSleepScreen() {

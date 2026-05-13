@@ -68,30 +68,30 @@ uint32_t pageOffsetForPage(File& f, const String& path, int page) {
 }
 
 void ensureOffsetsUpTo(int targetPage) {
-  if (g_reader.knownPages < 1) {
-    g_reader.knownPages = 1;
-    g_reader.pageOffsets[0] = 0;
+  if (g_reader.pages.count < 1) {
+    g_reader.pages.count = 1;
+    g_reader.pages.offsets[0] = 0;
   }
 
   bool addedOffsets = false;
-  while (!g_reader.eofReached && g_reader.knownPages <= targetPage && g_reader.knownPages < MAX_PAGES) {
-    uint32_t start = g_reader.pageOffsets[g_reader.knownPages - 1];
+  while (!g_reader.eofReached && g_reader.pages.count <= targetPage && g_reader.pages.count < MAX_PAGES) {
+    uint32_t start = g_reader.pages.offsets[g_reader.pages.count - 1];
     uint32_t next = buildNextOffset(start);
     if (next <= start) {
       g_reader.eofReached = true;
       break;
     }
-    g_reader.pageOffsets[g_reader.knownPages] = next;
-    storeOffsetCache(g_reader.currentBookPath, g_reader.knownPages, next);
-    g_reader.knownPages++;
+    g_reader.pages.offsets[g_reader.pages.count] = next;
+    storeOffsetCache(g_reader.currentBookPath, g_reader.pages.count, next);
+    g_reader.pages.count++;
     addedOffsets = true;
   }
 
-  if (g_reader.pageIndex >= g_reader.knownPages) g_reader.pageIndex = g_reader.knownPages - 1;
+  if (g_reader.pageIndex >= g_reader.pages.count) g_reader.pageIndex = g_reader.pages.count - 1;
   if (g_reader.pageIndex < 0) g_reader.pageIndex = 0;
 
-  if (addedOffsets && (g_reader.knownPages % 50 == 0 || g_reader.eofReached)) {
-    if (g_reader.file) savePageOffsetCacheForBook(g_reader.currentBookPath, g_reader.file.size());
+  if (addedOffsets && (g_reader.pages.count % 50 == 0 || g_reader.eofReached)) {
+    if (g_reader.file) savePageOffsetCacheForBook(g_reader.currentBookPath, g_reader.file.size(), g_reader.pages);
   }
 }
 

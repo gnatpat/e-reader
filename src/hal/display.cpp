@@ -110,6 +110,11 @@ void showToast(const String& msg) {
   g_toast.untilMs = millis() + TOAST_MS;
 }
 
+void resetUiEphemeralState() {
+  g_toast.msg = "";
+  g_toast.untilMs = 0;
+}
+
 void drawToastIfActive() {
   if (g_toast.untilMs == 0) return;
   if ((int32_t)(millis() - g_toast.untilMs) > 0) {

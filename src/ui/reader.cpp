@@ -6,6 +6,7 @@
 #include "storage/bookmarks.h"
 #include "storage/library.h"   // g_library — openBookByIndex reads it
 #include "storage/page_cache.h"
+#include "storage/preferences_store.h"
 
 // The active reader session. Produced by `openBookByIndex()` below,
 // torn down by `clearCurrentBookState()` / `safeCloseCurrentBook()` in
@@ -26,17 +27,16 @@ bool openBookByIndex(int idx) {
   }
 
   g_reader.file = f;
-  g_reader.currentBookKey = prefKeyForBook(path);
-  g_reader.currentBookPath = path;
-  g_reader.knownPages = 1;
-  g_reader.pageOffsets[0] = 0;
+  setCurrentBook(path);
+  g_reader.pages.count = 1;
+  g_reader.pages.offsets[0] = 0;
   g_reader.eofReached = false;
-  loadPageOffsetCacheForBook(path, g_reader.file.size());
+  loadPageOffsetCacheForBook(path, g_reader.file.size(), g_reader.pages);
   g_reader.pageIndex = prefs.getInt((g_reader.currentBookKey + "_p").c_str(), 0);
   if (g_reader.pageIndex < 0) g_reader.pageIndex = 0;
   g_reader.pageTurnsSinceFull = 0;
   resetSaveThrottle();
-  syncWakeState(true);
+  syncWakeState(true, path);
 
   storeOffsetCache(path, 0, 0);
 
@@ -99,23 +99,23 @@ void renderCurrentPage() {
   }
 
   ensureOffsetsUpTo(g_reader.pageIndex);
-  if (g_reader.knownPages <= 0) {
+  if (g_reader.pages.count <= 0) {
     drawCenter("Book empty", "Back to library");
     navigateToLibraryRoot();
     return;
   }
 
   if (g_reader.pageIndex < 0) g_reader.pageIndex = 0;
-  if (g_reader.pageIndex >= g_reader.knownPages) g_reader.pageIndex = g_reader.knownPages - 1;
+  if (g_reader.pageIndex >= g_reader.pages.count) g_reader.pageIndex = g_reader.pages.count - 1;
 
-  if (g_reader.pageOffsets[g_reader.pageIndex] >= bookSize) {
+  if (g_reader.pages.offsets[g_reader.pageIndex] >= bookSize) {
     g_reader.pageIndex = 0;
-    g_reader.knownPages = 1;
-    g_reader.pageOffsets[0] = 0;
+    g_reader.pages.count = 1;
+    g_reader.pages.offsets[0] = 0;
     g_reader.eofReached = false;
   }
 
-  uint32_t start = g_reader.pageOffsets[g_reader.pageIndex];
+  uint32_t start = g_reader.pages.offsets[g_reader.pageIndex];
   g_reader.lastPageStartOffset = start;
   g_reader.file.seek(start);
 
@@ -152,4 +152,99 @@ void idlePrefetchReader() {
   if ((uint32_t)(now - lastIdlePrefetchMs) < 60) return;
   lastIdlePrefetchMs = now;
   ensureOffsetsUpTo(g_reader.pageIndex + READER_IDLE_PREFETCH_PAGES);
+}
+
+// ============================================================================
+//  Reader lifecycle helpers. Own the transitions on `g_reader` — opening,
+//  closing, renaming, clearing. All storage operations they need are
+//  delegated to the pure storage API.
+// ============================================================================
+void setCurrentBook(const String& path) {
+  g_reader.currentBookPath = path;
+  g_reader.currentBookKey  = (path.length() > 0) ? prefKeyForBook(path) : String("");
+}
+
+void safeCloseCurrentBook() {
+  if (g_reader.file) g_reader.file.close();
+}
+
+void clearCurrentBookState() {
+  safeCloseCurrentBook();
+  setCurrentBook("");
+  g_reader.pageIndex = 0;
+  g_reader.pages.count = 0;
+  g_reader.eofReached = false;
+  g_reader.lastPageStartOffset = 0;
+  g_reader.pageTurnsSinceFull = 0;
+  g_reader.lastSaveMs = 0;
+  g_reader.lastSavedPage = -1;
+}
+
+bool reopenCurrentBookIfNeeded() {
+  if (g_reader.currentBookPath.length() == 0) return false;
+  safeCloseCurrentBook();
+  g_reader.file = FS.open(g_reader.currentBookPath, "r");
+  return (bool)g_reader.file;
+}
+
+void renameBook(const String& oldPath, const String& newPath) {
+  migrateBookMetadata(oldPath, newPath);
+  if (g_reader.currentBookPath == oldPath) {
+    setCurrentBook(newPath);
+  }
+}
+
+void resetAllPagination() {
+  invalidateAllPageCaches();   // storage: RAM LRU + pc_*.bin + per-book NVS
+  if (g_reader.currentBookPath.length() > 0) {
+    g_reader.pageIndex = 0;
+    g_reader.pages.count = 1;
+    g_reader.pages.offsets[0] = 0;
+    g_reader.eofReached = false;
+    resetSaveThrottle();
+    if (g_reader.currentBookKey.length() > 0) {
+      PreferencesStore kv(prefs);
+      kv.putInt((g_reader.currentBookKey + "_p").c_str(), 0);
+    }
+  }
+}
+
+// ============================================================================
+//  Progress + bookmark glue. Reads/writes g_reader, delegates the actual
+//  persistence to the pure storage API. Lives here (not in storage/) because
+//  the throttle decision and the "is a book open" guard are reader-state
+//  concerns.
+// ============================================================================
+void resetSaveThrottle() {
+  g_reader.lastSaveMs = 0;
+  g_reader.lastSavedPage = -1;
+}
+
+void saveProgressThrottled(bool force) {
+  if (g_reader.currentBookKey.length() == 0) return;
+
+  if (!force) {
+    if (g_reader.pageIndex == g_reader.lastSavedPage) return;
+    uint32_t now = millis();
+    if (g_reader.lastSaveMs != 0 && (now - g_reader.lastSaveMs) < SAVE_EVERY_MS) return;
+  }
+
+  PreferencesStore kv(prefs);
+  saveSavedPage(kv, g_reader.currentBookKey, g_reader.pageIndex);
+  g_reader.lastSaveMs = millis();
+  g_reader.lastSavedPage = g_reader.pageIndex;
+}
+
+const char* addBookmarkForCurrentBook() {
+  if (g_reader.currentBookKey.length() == 0) return nullptr;
+
+  PreferencesStore kv(prefs);
+  Bookmarks bm = loadBookmarks(kv, g_reader.currentBookKey);
+
+  const char* msg = addBookmark(bm, (uint16_t)g_reader.pageIndex, g_reader.lastPageStartOffset);
+  if (String(msg) == "Bookmark saved") {
+    saveBookmarks(kv, g_reader.currentBookKey, bm);
+    if (g_reader.file) savePageOffsetCacheForBook(g_reader.currentBookPath, g_reader.file.size(), g_reader.pages);
+  }
+  return msg;
 }

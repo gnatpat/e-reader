@@ -79,6 +79,7 @@ void setup() {
 
   prefs.begin("ereader", false);
   loadSettings();
+  applyFontSize(g_settings.fontSize);
   loadBooks();
   registerWebRoutes();
   markUserActivity();

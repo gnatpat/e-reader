@@ -26,6 +26,8 @@ inline uint32_t sleepAfterMs() {
   return g_settings.sleepSecs * 1000UL;
 }
 
-// Load persisted settings into `g_settings` and apply the font size to the
-// global font pointers. Clamps out-of-range values.
+// Load persisted settings into `g_settings`, clamping out-of-range values.
+// Pure storage read — does NOT touch the display. After calling this,
+// callers must invoke `applyFontSize(g_settings.fontSize)` (in hal/display.h)
+// to push the loaded font choice into the global font pointers + metrics.
 void loadSettings();

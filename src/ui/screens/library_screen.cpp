@@ -120,3 +120,8 @@ void LibraryScreen::onButton(const ButtonEvent& e) {
 void navigateToLibraryRoot() {
   if (g_currentScreen) g_currentScreen->nextScreen = &g_libraryScreen;
 }
+
+void resetNavigationState() {
+  g_library.currentFolder = "";
+  g_library.selectedItem = 0;
+}

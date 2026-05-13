@@ -25,7 +25,7 @@ void BookmarkPreviewScreen::onButton(const ButtonEvent& e) {
 
   if (e.kind == ButtonEvent::Long) {
     saveProgressThrottled(true);
-    if (g_reader.file) savePageOffsetCacheForBook(g_reader.currentBookPath, g_reader.file.size());
+    if (g_reader.file) savePageOffsetCacheForBook(g_reader.currentBookPath, g_reader.file.size(), g_reader.pages);
     nextScreen = &g_readerScreen;
     return;
   }
@@ -43,8 +43,8 @@ void BookmarkPreviewScreen::onButton(const ButtonEvent& e) {
     int oldPage = g_reader.pageIndex;
     g_reader.pageIndex++;
     ensureOffsetsUpTo(g_reader.pageIndex);
-    if (g_reader.eofReached && g_reader.pageIndex >= g_reader.knownPages)
-      g_reader.pageIndex = g_reader.knownPages - 1;
+    if (g_reader.eofReached && g_reader.pageIndex >= g_reader.pages.count)
+      g_reader.pageIndex = g_reader.pages.count - 1;
     if (g_reader.pageIndex != oldPage) {
       g_reader.pageTurnsSinceFull++;
       renderCurrentPage();

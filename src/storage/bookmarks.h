@@ -43,11 +43,7 @@ void saveBookmarksForKey(const String& bookKey,
                          uint8_t count);
 int  savedPageForBookPath(const String& path);
 
-// Reset/saveThrottled — manipulates g_reader. Firmware-only.
-void resetSaveThrottle();
-void saveProgressThrottled(bool force = false);
-
-// Add a bookmark at the currently-open reader page. Returns a UI message.
-const char* addBookmarkForCurrentBook();
+// Throttled-save and bookmark-current-page helpers live in ui/reader.h —
+// they manipulate g_reader and belong on the ui side of the storage boundary.
 
 #endif  // ARDUINO

@@ -60,3 +60,4 @@ extern ToastState g_toast;
 
 void showToast(const String& msg);
 void drawToastIfActive();
+void resetUiEphemeralState();   // clears any pending toast
