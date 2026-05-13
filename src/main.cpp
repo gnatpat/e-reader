@@ -1,0 +1,141 @@
+#include <Arduino.h>
+#include <esp_sleep.h>
+
+#include "config.h"
+#include "state.h"
+#include "hal/battery.h"
+#include "hal/display.h"
+#include "hal/input.h"
+#include "pure/hashing.h"
+#include "storage/book_state.h"
+#include "storage/fs_util.h"
+#include "storage/library.h"
+#include "storage/page_cache.h"
+#include "storage/settings_store.h"
+#include "ui/reader.h"
+#include "ui/screen.h"
+#include "ui/screens/about_screen.h"
+#include "ui/screens/bookmarks/book_select_screen.h"
+#include "ui/screens/bookmarks/bookmark_list_screen.h"
+#include "ui/screens/bookmarks/preview_screen.h"
+#include "ui/screens/library_screen.h"
+#include "ui/screens/list_screen.h"
+#include "ui/screens/reader_screen.h"
+#include "ui/screens/upload_screen.h"
+#include "ui/sleep.h"
+#include "ui/text.h"
+#include "web/web.h"
+
+// ============================================================================
+//  Screen instances + current-screen pointer
+// ============================================================================
+LibraryScreen              g_libraryScreen;
+ReaderScreen               g_readerScreen;
+UploadScreen               g_uploadScreen;
+AboutScreen                g_aboutScreen;
+ListScreen                 g_listScreen;
+BookmarkBookSelectScreen   g_bmBookSelectScreen;
+BookmarkListScreen         g_bmListScreen;
+BookmarkPreviewScreen      g_bmPreviewScreen;
+
+Screen* g_currentScreen = &g_libraryScreen;
+
+// ============================================================================
+//  Setup
+// ============================================================================
+void setup() {
+  Serial.begin(115200);
+  delay(200);
+  Serial.printf("[boot] wake cause: %d\n", esp_sleep_get_wakeup_cause());
+  setCpuFrequencyMhz(240); // full speed for init; lowered to 80 MHz at end of setup
+
+  pinMode(BTN, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(BTN), btnISR, CHANGE);
+
+  u8g2.begin(gfx);
+  invalidateMetrics();
+  (void)getMetrics();
+  resetOffsetCache();
+
+#if HAS_BATTERY
+  adcSetupOnce();
+  pinMode(BAT_ADC_CTRL, INPUT);
+  updateBatteryCached(true);
+#endif
+
+  display.fastmodeOff();
+  display.clear();
+
+  if (!fsBegin()) {
+    drawCenter("Storage error", "Try factory reset");
+    return;
+  }
+  ensureBooksDir();
+
+  {
+    uint64_t chipId = ESP.getEfuseMac();
+    snprintf(AP_SSID, sizeof(AP_SSID), "PALA-%06llX", chipId & 0xFFFFFFULL);
+  }
+
+  prefs.begin("ereader", false);
+  loadSettings();
+  loadBooks();
+  registerWebRoutes();
+  markUserActivity();
+
+  bool restored = false;
+  if (prefs.getInt("wake_mode", 0) == 1) {
+    String wp = prefs.getString("wake_path", "");
+    if (wp.length() > 0) {
+      for (int i = 0; i < g_library.bookCount; i++) {
+        if (strcmp(g_library.books[i].path, wp.c_str()) == 0) {
+          if (openBookByIndex(i)) {
+            g_reader.pageTurnsSinceFull = FULL_REFRESH_EVERY_N_PAGES;
+            renderCurrentPage();   // draw first — takes ~300ms, user releases button during this
+            resetInputFrontend();  // then discard the wake-press only
+            g_currentScreen = &g_readerScreen;
+            restored = true;
+          }
+          break;
+        }
+      }
+    }
+  }
+
+  if (!restored) {
+    g_currentScreen = &g_libraryScreen;
+    g_libraryScreen.onEnter();
+    resetInputFrontend();
+  }
+
+  // Drop to 80 MHz for normal operation — saves significant power.
+  // Upload mode will raise it back to 240 MHz temporarily.
+  setCpuFrequencyMhz(80);
+}
+
+// ============================================================================
+//  Main loop
+// ============================================================================
+void loop() {
+  g_btns.poll();
+  maybeRecoverFromIsrOverflow();
+
+  ButtonEvent ev = ButtonEvent::fromButtonState(g_btns);
+  if (ev.any()) markUserActivity();
+
+  if (ENABLE_DEEP_SLEEP && g_currentScreen->allowSleep()) {
+    if (userIdleMs() > sleepAfterMs()) {
+      goToSleep();
+      return;
+    }
+  }
+
+  g_currentScreen->onButton(ev);
+  g_currentScreen->onIdleTick();
+
+  if (g_currentScreen->nextScreen) {
+    g_currentScreen = g_currentScreen->nextScreen;
+    g_currentScreen->nextScreen = nullptr;
+    g_currentScreen->onEnter();
+  }
+}

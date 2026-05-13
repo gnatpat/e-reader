@@ -1,0 +1,21 @@
+#pragma once
+
+#include <Arduino.h>
+
+#include "config.h"
+
+// Shared state for the three-screen bookmark flow:
+// BookmarkBookSelectScreen -> BookmarkListScreen -> BookmarkPreviewScreen.
+// Reset on entering LibraryScreen.
+struct BookmarkSession {
+  int bookIndex = 0;
+  int selectedIndex = 0;
+
+  uint16_t pages[MAX_BOOKMARKS];
+  uint32_t offsets[MAX_BOOKMARKS];
+  uint8_t  count = 0;
+};
+
+extern BookmarkSession g_bookmarkSession;
+
+void resetBookmarkSession();
