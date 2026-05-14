@@ -20,9 +20,18 @@ Bookmarks loadBookmarks(KeyValueStore& kv, const String& bookKey);
 // Save `bm` for `bookKey` into `kv` using the v2 format.
 void saveBookmarks(KeyValueStore& kv, const String& bookKey, const Bookmarks& bm);
 
-// Per-book reading progress (page index, 0-based). Default is 0.
-int  loadSavedPage(KeyValueStore& kv, const String& bookKey);
-void saveSavedPage(KeyValueStore& kv, const String& bookKey, int pageIndex);
+// Per-book reading progress.
+//
+// The canonical position is the **byte offset** in the source file — that's
+// invariant under font/layout changes. The page-number sibling is kept as a
+// stale display hint (used by the web file list and as a legacy fallback for
+// books saved by older firmware that didn't store offsets).
+//
+// `loadSavedOffset` returns 0xFFFFFFFF if no offset has been saved yet.
+int      loadSavedPage(KeyValueStore& kv, const String& bookKey);
+void     saveSavedPage(KeyValueStore& kv, const String& bookKey, int pageIndex);
+uint32_t loadSavedOffset(KeyValueStore& kv, const String& bookKey);
+void     saveSavedOffset(KeyValueStore& kv, const String& bookKey, uint32_t byteOffset);
 
 // Remove all metadata for one book (progress + bookmarks). Returns true if
 // anything was removed.
@@ -48,20 +57,6 @@ void saveBookmarksForKey(const String& bookKey,
                          uint8_t count);
 int  savedPageForBookPath(const String& path);
 
-// Bulk invalidation, used when font size or line spacing changes — the
-// stored page numbers and stored bookmark byte offsets are all now wrong
-// for the new layout. Bookmark page numbers are preserved (the layout
-// change preserves "which paragraph the user marked," roughly), but the
-// cached byte offsets are reset to 0xFFFFFFFF so they get recomputed on
-// next access.
-void resetAllSavedProgress();
-void invalidateAllBookmarkOffsets();
-
-// Composite: invalidate everything that depends on the current pagination
-// layout. Wipes page caches (RAM + pc_*.bin), resets per-book saved page
-// progress, and marks all bookmark byte offsets as unknown. Called when
-// font size or line spacing changes via the web settings UI.
-void resetAllPagination();
 
 // Per-book lifecycle. Compose the pure NVS operations above with the
 // matching page-cache file work in storage/page_cache.h. They do NOT

@@ -6,6 +6,7 @@
 #include "storage/library.h"   // g_library — openBookByIndex reads it
 #include "storage/page_cache.h"
 #include "storage/preferences_store.h"
+#include "storage/settings_store.h"  // g_settings — fontSize/lineGap for cache stamping
 
 #include "ui/screens/library_screen.h"  // navigateToLibraryRoot — fallback on error
 #include "ui/text.h"
@@ -60,8 +61,22 @@ bool openBookByIndex(int idx) {
   g_reader.pages.count = 1;
   g_reader.pages.offsets[0] = 0;
   g_reader.pages.eofReached = false;
-  loadPageOffsetCacheForBook(path, g_reader.book.size(), g_reader.pages);
-  g_reader.cursor.pageIndex = prefs.getInt((g_reader.book.key() + "_p").c_str(), 0);
+  loadPageOffsetCacheForBook(path, g_reader.book.size(),
+                             g_settings.fontSize, g_settings.lineGap,
+                             g_reader.pages);
+
+  // Resolve the reading position. The byte offset (`_off`) is canonical and
+  // survives font changes; if it's set, find which page contains it under
+  // the current layout. If absent (legacy data from older firmware), fall
+  // back to the saved page number — it'll get rewritten as an offset on
+  // the next save.
+  PreferencesStore kv(prefs);
+  uint32_t savedOffset = loadSavedOffset(kv, g_reader.book.key());
+  if (savedOffset != 0xFFFFFFFFUL) {
+    g_reader.cursor.pageIndex = findPageForOffset(savedOffset);
+  } else {
+    g_reader.cursor.pageIndex = loadSavedPage(kv, g_reader.book.key());
+  }
   if (g_reader.cursor.pageIndex < 0) g_reader.cursor.pageIndex = 0;
   g_reader.cursor.pageTurnsSinceFull = 0;
   resetSaveThrottle();
@@ -229,6 +244,13 @@ void saveProgressThrottled(bool force) {
   }
 
   PreferencesStore kv(prefs);
+  // Canonical: the byte offset where the user currently is. Invariant
+  // under font/layout changes.
+  saveSavedOffset(kv, g_reader.book.key(),
+                  g_reader.pages.offsets[g_reader.cursor.pageIndex]);
+  // Hint: the page number at the current layout. Used by the web file
+  // list for display and as a legacy fallback for openBookByIndex when
+  // no offset has been saved yet.
   saveSavedPage(kv, g_reader.book.key(), g_reader.cursor.pageIndex);
   g_reader.save.lastSaveMs = millis();
   g_reader.save.lastSavedPage = g_reader.cursor.pageIndex;
@@ -244,7 +266,9 @@ const char* addBookmarkForCurrentBook() {
   const char* msg = addBookmark(bm, (uint16_t)g_reader.cursor.pageIndex, pageOff);
   if (String(msg) == "Bookmark saved") {
     saveBookmarks(kv, g_reader.book.key(), bm);
-    savePageOffsetCacheForBook(g_reader.book.path(), g_reader.book.size(), g_reader.pages);
+    savePageOffsetCacheForBook(g_reader.book.path(), g_reader.book.size(),
+                               g_settings.fontSize, g_settings.lineGap,
+                               g_reader.pages);
   }
   return msg;
 }

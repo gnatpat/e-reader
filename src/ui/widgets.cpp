@@ -2,6 +2,7 @@
 
 #include "hal/battery.h"
 #include "hal/display.h"
+#include "storage/settings_store.h"  // g_settings.lineGap
 
 static const int UI_HEADER_TOP = 6;
 static const int UI_HEADER_GAP = 6;
@@ -33,16 +34,54 @@ int drawSectionHeader(const char* title) {
   return contentTop;
 }
 
-void drawMenuBulletRow(int yBaseline, const String& label, bool /*selected*/,
-                       bool boldText, int depth, bool systemItem) {
-  int textX = UI_LIST_LEFT + (depth * UI_DEPTH_INDENT);
-  if (systemItem) textX += 2;
-
+void drawMenuRow(int yBaseline, const String& label, bool selected, int extraIndent) {
   u8g2.setForegroundColor(1);
-  u8g2.setFont(boldText ? BOLD_FONT : MAIN_FONT);
-  u8g2.setCursor(textX, yBaseline);
+  u8g2.setFont(selected ? BOLD_FONT : MAIN_FONT);
+  u8g2.setCursor(UI_LIST_LEFT + extraIndent, yBaseline);
   u8g2.print(label.c_str());
   u8g2.setFont(MAIN_FONT);
+}
+
+int menuLineH() {
+  int ascent = u8g2.getFontAscent();
+  int descent = u8g2.getFontDescent();
+  return (ascent - descent) + g_settings.lineGap + 1;
+}
+
+void drawScrollableList(int contentTopY, int itemCount, int selectedIndex,
+                        const DrawListRowFn& drawRow) {
+  if (itemCount <= 0) return;
+
+  int lineH = menuLineH();
+
+  // A row of N items uses (N-1)*lineH + textHeight pixels — the last row
+  // doesn't need a trailing inter-line gap. Crediting that leftover gap
+  // lets us fit one more row than `available / lineH` would suggest.
+  // `descent` is negative (e.g. -2), so adding it tightens the bound by
+  // |descent| to keep descenders on-screen.
+  int descent = u8g2.getFontDescent();
+  int available = SCREEN_H - BOT_PAD + descent - contentTopY;
+  int visibleRows = (available / lineH) + 1;
+  if (visibleRows < 1) visibleRows = 1;
+
+  if (selectedIndex < 0) selectedIndex = 0;
+  if (selectedIndex >= itemCount) selectedIndex = itemCount - 1;
+
+  // Center the selected item in the visible window, then clamp at the
+  // ends so we don't leave blank rows past the list.
+  int top = selectedIndex - (visibleRows / 2);
+  if (top < 0) top = 0;
+  if (top > itemCount - visibleRows) top = max(0, itemCount - visibleRows);
+
+  int y = contentTopY;
+  int rowsUsed = 0;
+  for (int idx = top; idx < itemCount && rowsUsed < visibleRows; idx++) {
+    int budget = visibleRows - rowsUsed;
+    int consumed = drawRow(idx, y, idx == selectedIndex, budget);
+    if (consumed < 1) consumed = 1;
+    y += consumed * lineH;
+    rowsUsed += consumed;
+  }
 }
 
 void splitListLabelForDisplay(const String& in, int maxWidth, String& line1, String& line2) {

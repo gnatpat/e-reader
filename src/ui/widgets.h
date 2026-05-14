@@ -1,5 +1,7 @@
 #pragma once
 
+#include <functional>
+
 #include "config.h"
 #include "state.h"
 
@@ -7,10 +9,41 @@
 //  Shared drawing helpers used by multiple screens
 // ============================================================================
 int drawSectionHeader(const char* title);
-void drawMenuBulletRow(int yBaseline, const String& label, bool selected,
-                       bool boldText = false, int depth = 0, bool systemItem = false);
+
+// Draw one row of a scrollable menu list. Text starts at
+// `UI_LIST_LEFT + extraIndent` on the given baseline; bold if selected.
+// Resets font to MAIN_FONT afterwards. Most callers pass no indent;
+// LibraryScreen passes its folder-depth + system-nudge offset.
+void drawMenuRow(int yBaseline, const String& label, bool selected, int extraIndent = 0);
+
+// Row height for the menu screens. Used internally by drawScrollableList;
+// also exposed so callers that draw extra rows (e.g. ListScreen's selected
+// continuation) can advance y consistently with the widget.
+int menuLineH();
+
 void splitListLabelForDisplay(const String& in, int maxWidth, String& line1, String& line2);
 
-// Layout constants shared across screen implementations.
+// ============================================================================
+//  Scrollable list widget
+//
+//  Computes how many rows fit, which window of items is visible, and where
+//  the selected item should sit (centered). Calls `drawRow` once per visible
+//  item; the callback returns how many vertical rows it consumed (>= 1).
+//  Most callbacks return 1; ListScreen's returns 2 for a selected item with
+//  a continuation line. `budget` tells the callback how many rows remain in
+//  the visible window — useful for "only draw the continuation if there's
+//  room" decisions.
+//
+//  Caller responsibility: set the desired font before calling (the widget
+//  reads metrics off whatever font is current to compute line height) and
+//  pass `contentTopY` from `drawSectionHeader`.
+// ============================================================================
+using DrawListRowFn = std::function<int(int idx, int y, bool selected, int budget)>;
+
+void drawScrollableList(int contentTopY,
+                        int itemCount,
+                        int selectedIndex,
+                        const DrawListRowFn& drawRow);
+
+// Leftmost x for menu rows.
 static const int UI_LIST_LEFT = MARGIN_X + 4;
-static const int UI_DEPTH_INDENT = 10;

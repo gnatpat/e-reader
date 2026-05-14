@@ -19,9 +19,11 @@ struct LayoutMetrics {
 // the measurement function is consistent with the metrics they pass in.
 using MeasureFn = std::function<int(const char*)>;
 
-// Called once per emitted line, in order. The String is the line's text with
-// trailing spaces trimmed.
-using LineCallback = std::function<void(const String& line)>;
+// Called once per emitted line, in order. `buf` is NUL-terminated and
+// trailing-spaces-trimmed; `len` is its byte length (excluding NUL). The
+// buffer is owned by the paginator and only valid for the duration of the
+// call — copy if you need to keep it.
+using LineCallback = std::function<void(const char* buf, size_t len)>;
 
 // Pure pagination engine. Reads bytes from `in` starting at `startPos` and
 // emits at most `metrics.maxLines` lines via `onLine`. Returns the absolute

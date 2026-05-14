@@ -18,11 +18,16 @@ int utf8CharLenFromLead(uint8_t b);
 // back to 1 (caller can advance one byte and try again).
 int utf8SafeCharLenAt(const String& s, int index);
 
+// Buffer-based variant for the paginator's hot path. `len` is the live byte
+// length of `buf`. Returns 0 if `index >= len`, 1 for malformed sequences
+// or sequences that would run past `len`, otherwise the encoded length.
+int utf8SafeCharLenAt(const char* buf, size_t len, size_t index);
+
 // Returns the UTF-8 character at `index` (as a String), or empty if out of range.
 String utf8CharAt(const String& s, int index);
 
-bool isBreakableWhitespaceChar(const String& ch);
-bool isBreakablePunctuationChar(const String& ch);
+bool isBreakableWhitespaceByte(char b);
+bool isBreakablePunctuationByte(char b);
 
 // Normalize typography: strip BOM, NBSP -> space, smart quotes -> ASCII
 // quotes, em/en dashes -> '-', ellipsis -> "...". Preserves all other bytes.

@@ -19,19 +19,30 @@ int utf8SafeCharLenAt(const String& s, int index) {
   return len;
 }
 
+int utf8SafeCharLenAt(const char* buf, size_t len, size_t index) {
+  if (index >= len) return 0;
+  uint8_t b0 = (uint8_t)buf[index];
+  int clen = utf8CharLenFromLead(b0);
+  if (index + (size_t)clen > len) return 1;
+  for (int i = 1; i < clen; i++) {
+    if (!isUtf8ContinuationByte((uint8_t)buf[index + i])) return 1;
+  }
+  return clen;
+}
+
 String utf8CharAt(const String& s, int index) {
   int len = utf8SafeCharLenAt(s, index);
   if (len <= 0) return String("");
   return s.substring(index, index + len);
 }
 
-bool isBreakableWhitespaceChar(const String& ch) {
-  return ch == " " || ch == "\n" || ch == "\t";
+bool isBreakableWhitespaceByte(char b) {
+  return b == ' ' || b == '\n' || b == '\t';
 }
 
-bool isBreakablePunctuationChar(const String& ch) {
-  return ch == "." || ch == "," || ch == ";" || ch == ":" || ch == "!" || ch == "?" ||
-         ch == ")" || ch == "]" || ch == "}" || ch == "-" || ch == "/";
+bool isBreakablePunctuationByte(char b) {
+  return b == '.' || b == ',' || b == ';' || b == ':' || b == '!' || b == '?' ||
+         b == ')' || b == ']' || b == '}' || b == '-' || b == '/';
 }
 
 String normalizeTypography(const String& in) {

@@ -4,7 +4,6 @@
 #include "pure/hashing.h"
 #include "storage/book_metadata.h"
 #include "storage/library.h"         // g_library
-#include "storage/settings_store.h"  // g_settings.lineGap
 #include "ui/reader.h"
 #include "ui/screens/bookmarks/book_select_screen.h"
 #include "ui/screens/bookmarks/preview_screen.h"
@@ -20,9 +19,6 @@ void BookmarkListScreen::onEnter() {
 void BookmarkListScreen::draw() {
   prepareMenuFrame();
   u8g2.setFont(MAIN_FONT);
-  int ascent = u8g2.getFontAscent();
-  int descent = u8g2.getFontDescent();
-  int lineH = (ascent - descent) + g_settings.lineGap;
   int y = drawSectionHeader("Bookmarks");
 
   String bookPath = String(g_library.books[g_bookmarkSession.bookIndex].path);
@@ -32,40 +28,29 @@ void BookmarkListScreen::draw() {
     g_bookmarkSession.selectedIndex = max(0, (int)g_bookmarkSession.count - 1);
 
   if (g_bookmarkSession.count == 0) {
-    drawMenuBulletRow(y, "No bookmarks", true, false, 0, false);
+    drawMenuRow(y, "No bookmarks", false);
     display.update();
     return;
   }
 
   File f = FS.open(bookPath, "r");
   if (!f) {
-    drawMenuBulletRow(y, "Open failed", true, false, 0, false);
+    drawMenuRow(y, "Open failed", false);
     display.update();
     return;
   }
 
-  int visible = (SCREEN_H - y - BOT_PAD) / lineH;
-  if (visible < 1) visible = 1;
-  if (visible > 5) visible = 5;
-
-  int top = g_bookmarkSession.selectedIndex - (visible / 2);
-  if (top < 0) top = 0;
-  if (top > (int)g_bookmarkSession.count - visible) top = max(0, (int)g_bookmarkSession.count - visible);
-
-  for (int i = 0; i < visible; i++) {
-    int idx = top + i;
-    if (idx >= (int)g_bookmarkSession.count) break;
-
-    int targetPage = (int)g_bookmarkSession.pages[idx];
-    if (targetPage < 0) targetPage = 0;
-
-    uint32_t pageOff = resolveBookmarkOffset(bookPath, (uint16_t)targetPage, g_bookmarkSession.offsets[idx]);
-    FileReadStream fs(f);
-    String sn = readBookmarkLabelAtOffset(fs, pageOff, targetPage);
-    drawMenuBulletRow(y, sn, idx == g_bookmarkSession.selectedIndex,
-                      idx == g_bookmarkSession.selectedIndex, 0, false);
-    y += lineH;
-  }
+  drawScrollableList(y, (int)g_bookmarkSession.count, g_bookmarkSession.selectedIndex,
+    [&](int idx, int rowY, bool selected, int /*budget*/) {
+      int targetPage = (int)g_bookmarkSession.pages[idx];
+      if (targetPage < 0) targetPage = 0;
+      uint32_t pageOff = resolveBookmarkOffset(bookPath, (uint16_t)targetPage,
+                                               g_bookmarkSession.offsets[idx]);
+      FileReadStream fs(f);
+      String sn = readBookmarkLabelAtOffset(fs, pageOff, targetPage);
+      drawMenuRow(rowY, sn, selected);
+      return 1;
+    });
 
   f.close();
   display.update();
@@ -90,8 +75,22 @@ void BookmarkListScreen::onButton(const ButtonEvent& e) {
     if (g_bookmarkSession.count == 0) return;
 
     if (openBookByIndex(g_bookmarkSession.bookIndex)) {
-      g_reader.cursor.pageIndex = (int)g_bookmarkSession.pages[g_bookmarkSession.selectedIndex];
-      if (g_reader.cursor.pageIndex < 0) g_reader.cursor.pageIndex = 0;
+      // Navigate by the bookmark's stored byte offset (invariant under
+      // font/layout changes). The stored page number is just a stale
+      // label; the offset is the source of truth for "where the user was."
+      //
+      // Legacy fallback: bookmarks saved by earlier firmware may have had
+      // their offset invalidated to 0xFFFFFFFF on font change. For those,
+      // fall back to the stored page number — wrong-but-stable behavior
+      // matching the old code. They'll heal next time the user re-saves.
+      uint32_t off = g_bookmarkSession.offsets[g_bookmarkSession.selectedIndex];
+      if (off == 0xFFFFFFFFUL) {
+        int storedPage = (int)g_bookmarkSession.pages[g_bookmarkSession.selectedIndex];
+        if (storedPage < 0) storedPage = 0;
+        g_reader.cursor.pageIndex = storedPage;
+      } else {
+        g_reader.cursor.pageIndex = findPageForOffset(off);
+      }
       nextScreen = &g_bmPreviewScreen;
     } else {
       nextScreen = &g_libraryScreen;

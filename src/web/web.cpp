@@ -422,11 +422,22 @@ static void handleJumpPageWeb() {
   if (page < 1) page = 1;
   int zeroBasedPage = page - 1;
 
-  // Library entry already cleared g_reader; just write the NVS target page.
-  // The reader will load it the next time the user opens this book.
+  // Library entry already cleared g_reader. We write both the page number
+  // (display hint) and the byte offset (canonical position used by the
+  // reader on next open). Computing the offset requires paginating the
+  // book at the current font — file open + page walk. Same cost as the
+  // bookmark resolve path.
   String path = String(g_library.books[id].path);
+  String key = prefKeyForBook(path);
   PreferencesStore kv(prefs);
-  saveSavedPage(kv, prefKeyForBook(path), zeroBasedPage);
+  saveSavedPage(kv, key, zeroBasedPage);
+
+  File f = FS.open(path, "r");
+  if (f) {
+    uint32_t offset = pageOffsetForPage(f, path, zeroBasedPage);
+    f.close();
+    saveSavedOffset(kv, key, offset);
+  }
 
   server.sendHeader("Location", "/files");
   server.send(302, "text/plain", "");
@@ -953,11 +964,11 @@ static void handleSettingsPost() {
   }
 
   if (layoutChanged) {
-    // Wipe everything keyed to the old layout. Font changes take effect the
-    // next time a book is opened from the library — there's no live reflow
-    // path because the web server is only active in upload mode, which the
-    // reader can't be running underneath.
-    resetAllPagination();
+    // The on-disk page caches are layout-stamped and self-invalidate on
+    // load, so nothing on disk needs touching here. The in-memory LRU
+    // does — its (page, offset) entries were keyed by page numbers under
+    // the old layout, and those page numbers don't carry over.
+    resetOffsetCache();
   }
 
   server.sendHeader("Location", "/settings");

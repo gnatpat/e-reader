@@ -2,6 +2,7 @@
 
 #include "hal/display.h"
 #include "storage/page_cache.h"
+#include "storage/settings_store.h"  // g_settings — fontSize/lineGap for cache stamping
 #include "ui/reader.h"
 #include "ui/screens/library_screen.h"
 #include "ui/text.h"
@@ -61,7 +62,9 @@ void ReaderScreen::onIdleTick() {
 void ReaderScreen::onSleep() {
   // Strong invariant: reader screen is never active without an open book.
   saveProgressThrottled(true);
-  savePageOffsetCacheForBook(g_reader.book.path(), g_reader.book.size(), g_reader.pages);
+  savePageOffsetCacheForBook(g_reader.book.path(), g_reader.book.size(),
+                             g_settings.fontSize, g_settings.lineGap,
+                             g_reader.pages);
   armResumeOnWake();
   g_reader.book.close();   // release LittleFS handle before deep sleep
 }

@@ -26,8 +26,19 @@ void saveSavedPage(KeyValueStore& kv, const String& bookKey, int pageIndex) {
   kv.putInt((bookKey + "_p").c_str(), pageIndex);
 }
 
+uint32_t loadSavedOffset(KeyValueStore& kv, const String& bookKey) {
+  // Stored as int; -1 (default when key absent) sentinels "not set."
+  int v = kv.getInt((bookKey + "_off").c_str(), -1);
+  return (v < 0) ? 0xFFFFFFFFUL : (uint32_t)v;
+}
+
+void saveSavedOffset(KeyValueStore& kv, const String& bookKey, uint32_t byteOffset) {
+  kv.putInt((bookKey + "_off").c_str(), (int)byteOffset);
+}
+
 bool clearBookMetadata(KeyValueStore& kv, const String& bookKey) {
   kv.remove((bookKey + "_p").c_str());
+  kv.remove((bookKey + "_off").c_str());
   kv.remove(bmKeyFor(bookKey).c_str());
   return true;
 }
@@ -37,6 +48,12 @@ void renameBookMetadata(KeyValueStore& kv, const String& oldKey, const String& n
   if (progress >= 0) {
     kv.putInt((newKey + "_p").c_str(), progress);
     kv.remove((oldKey + "_p").c_str());
+  }
+
+  int off = kv.getInt((oldKey + "_off").c_str(), -1);
+  if (off >= 0) {
+    kv.putInt((newKey + "_off").c_str(), off);
+    kv.remove((oldKey + "_off").c_str());
   }
 
   uint8_t buf[BOOKMARKS_ENCODED_MAX_SIZE] = {0};
@@ -84,31 +101,6 @@ void saveBookmarksForKey(const String& bookKey,
 int savedPageForBookPath(const String& path) {
   PreferencesStore kv(prefs);
   return loadSavedPage(kv, prefKeyForBook(path));
-}
-
-void resetAllSavedProgress() {
-  PreferencesStore kv(prefs);
-  for (int i = 0; i < g_library.bookCount; i++) {
-    String key = prefKeyForBook(String(g_library.books[i].path));
-    saveSavedPage(kv, key, 0);
-  }
-}
-
-void invalidateAllBookmarkOffsets() {
-  PreferencesStore kv(prefs);
-  for (int i = 0; i < g_library.bookCount; i++) {
-    String key = prefKeyForBook(String(g_library.books[i].path));
-    Bookmarks bm = loadBookmarks(kv, key);
-    if (bm.count == 0) continue;
-    for (uint8_t j = 0; j < bm.count; j++) bm.offsets[j] = 0xFFFFFFFFUL;
-    saveBookmarks(kv, key, bm);
-  }
-}
-
-void resetAllPagination() {
-  invalidateAllPageCaches();         // page_cache: RAM LRU + pc_*.bin
-  resetAllSavedProgress();           // per-book NVS saved page -> 0
-  invalidateAllBookmarkOffsets();    // per-book bookmark offsets -> unknown
 }
 
 void deleteBookMetadata(const String& path) {

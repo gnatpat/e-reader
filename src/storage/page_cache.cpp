@@ -23,26 +23,51 @@ void storeOffsetCache(const String& path, int page, uint32_t offset) {
 
 // ============================================================================
 //  On-disk page-offset cache
+//
+//  Files are stamped with a `layoutVersion` derived from the settings that
+//  affect pagination (font size + line gap). Load rejects any file whose
+//  stamp doesn't match the current layout — stale files are silently
+//  ignored and overwritten on next save. No cross-cutting "invalidate
+//  everything" pass is needed on font change; layout-correctness is a
+//  property of the file format itself.
 // ============================================================================
+
+// Magic was bumped from 0x50434F46 -> 0x50434F47 when `layoutVersion` was
+// added. Old files fail the magic check, get ignored, then overwritten.
+static constexpr uint32_t kPageCacheMagic = 0x50434F47UL;
+
+// Compact encoding of "what layout were the offsets in this file computed
+// under?" — both inputs are tiny ints (fontSize ∈ {8,10,12,14}, lineGap
+// ∈ [0,4]) so a stride-by-256 packing is unambiguous and trivially injective.
+static uint16_t encodeLayoutVersion(int fontSize, int lineGap) {
+  return (uint16_t)((fontSize << 8) | (lineGap & 0xFF));
+}
+
 String pageCachePathForBook(const String& path) {
   return String("/pc_") + prefKeyForBook(path) + ".bin";
 }
 
 bool loadPageOffsetCacheForBook(const String& path, size_t expectedSize,
+                                int fontSize, int lineGap,
                                 PageOffsetTable& out) {
   String cachePath = pageCachePathForBook(path);
   File f = FS.open(cachePath, "r");
   if (!f) return false;
 
   uint32_t magic = 0;
+  uint16_t layoutVersion = 0;
   uint32_t fileSize = 0;
   uint16_t count = 0;
 
-  if (f.read((uint8_t*)&magic, sizeof(magic)) != sizeof(magic))      { f.close(); return false; }
-  if (f.read((uint8_t*)&fileSize, sizeof(fileSize)) != sizeof(fileSize)) { f.close(); return false; }
-  if (f.read((uint8_t*)&count, sizeof(count)) != sizeof(count))      { f.close(); return false; }
+  if (f.read((uint8_t*)&magic, sizeof(magic)) != sizeof(magic))                 { f.close(); return false; }
+  if (f.read((uint8_t*)&layoutVersion, sizeof(layoutVersion)) != sizeof(layoutVersion)) { f.close(); return false; }
+  if (f.read((uint8_t*)&fileSize, sizeof(fileSize)) != sizeof(fileSize))        { f.close(); return false; }
+  if (f.read((uint8_t*)&count, sizeof(count)) != sizeof(count))                 { f.close(); return false; }
 
-  if (magic != 0x50434F46UL || fileSize != (uint32_t)expectedSize || count == 0 || count > MAX_PAGES) {
+  if (magic != kPageCacheMagic
+      || layoutVersion != encodeLayoutVersion(fontSize, lineGap)
+      || fileSize != (uint32_t)expectedSize
+      || count == 0 || count > MAX_PAGES) {
     f.close();
     return false;
   }
@@ -62,6 +87,7 @@ bool loadPageOffsetCacheForBook(const String& path, size_t expectedSize,
 }
 
 void savePageOffsetCacheForBook(const String& path, size_t fileSize,
+                                int fontSize, int lineGap,
                                 const PageOffsetTable& in) {
   if (in.count <= 1) return;
 
@@ -69,11 +95,13 @@ void savePageOffsetCacheForBook(const String& path, size_t fileSize,
   File f = FS.open(cachePath, "w");
   if (!f) return;
 
-  uint32_t magic = 0x50434F46UL;
+  uint32_t magic = kPageCacheMagic;
+  uint16_t layoutVersion = encodeLayoutVersion(fontSize, lineGap);
   uint32_t size32 = (uint32_t)fileSize;
   uint16_t count16 = (uint16_t)min(in.count, MAX_PAGES);
 
   f.write((const uint8_t*)&magic, sizeof(magic));
+  f.write((const uint8_t*)&layoutVersion, sizeof(layoutVersion));
   f.write((const uint8_t*)&size32, sizeof(size32));
   f.write((const uint8_t*)&count16, sizeof(count16));
   f.write((const uint8_t*)in.offsets, count16 * sizeof(uint32_t));
@@ -93,31 +121,3 @@ void renamePageCacheForBook(const String& oldPath, const String& newPath) {
   FS.rename(oldCache, newCache);
 }
 
-void invalidateAllPageCaches() {
-  // Page offsets are computed from the current font size and line spacing.
-  // When either changes, both the in-memory LRU and the on-disk .bin files
-  // are stale and have to go.
-  //
-  // Per-book saved progress + bookmark byte offsets are also stale at this
-  // point — those live in `storage/book_metadata.cpp` and are reset there by
-  // `resetAllSavedProgress` + `invalidateAllBookmarkOffsets`. The full
-  // "layout changed, reset everything" composition is `resetAllPagination()`
-  // in `storage/book_metadata.h`, which is what callers actually invoke
-  // when font size or line spacing changes.
-  resetOffsetCache();
-
-  File root = FS.open("/");
-  if (root && root.isDirectory()) {
-    File f = root.openNextFile();
-    while (f) {
-      String name = String(f.name());
-      bool removeIt = name.startsWith("/pc_") && name.endsWith(".bin");
-      f.close();
-      if (removeIt) FS.remove(name);
-      f = root.openNextFile();
-    }
-    root.close();
-  } else if (root) {
-    root.close();
-  }
-}

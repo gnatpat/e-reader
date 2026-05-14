@@ -3,7 +3,6 @@
 #include "hal/display.h"
 #include "storage/library.h"
 #include "storage/list_items.h"
-#include "storage/settings_store.h"  // g_settings.lineGap
 #include "ui/reader.h"
 #include "ui/screens/about_screen.h"
 #include "ui/screens/bookmarks/book_select_screen.h"
@@ -12,6 +11,13 @@
 #include "ui/screens/reader_screen.h"
 #include "ui/screens/upload_screen.h"
 #include "ui/widgets.h"
+
+// LibraryScreen-specific row indenting. Other menu screens pass nothing
+// extra to drawMenuRow; the library is the only one with folder nesting
+// and a distinguishing nudge for "system" entries (Bookmarks/List/Device/
+// Upload), so the math lives here, not in the shared widget header.
+static const int LIBRARY_DEPTH_INDENT = 10;
+static const int LIBRARY_SYSTEM_NUDGE = 2;
 
 void LibraryScreen::onEnter() {
   // Full reset on every library entry. Web/upload flows run from here, so
@@ -25,39 +31,29 @@ void LibraryScreen::onEnter() {
   draw();
 }
 
+static bool isSystemEntry(int idx) {
+  LibraryEntryType t = g_library.entryTypes[idx];
+  return t == LIB_ENTRY_BOOKMARKS || t == LIB_ENTRY_LIST
+      || t == LIB_ENTRY_ABOUT || t == LIB_ENTRY_UPLOAD;
+}
+
+static int libraryRowIndent(int idx) {
+  int indent = g_library.entryDepths[idx] * LIBRARY_DEPTH_INDENT;
+  if (isSystemEntry(idx)) indent += LIBRARY_SYSTEM_NUDGE;
+  return indent;
+}
+
 void LibraryScreen::draw() {
   prepareMenuFrame();
   u8g2.setFont(MAIN_FONT);
   buildLibraryEntries();
-
-  int ascent = u8g2.getFontAscent();
-  int descent = u8g2.getFontDescent();
-  int lineH = (ascent - descent) + g_settings.lineGap + 1;
   int y = drawSectionHeader("Library");
 
-  int totalItems = g_library.entryCount;
-  int visible = (SCREEN_H - y - BOT_PAD) / lineH;
-  if (visible < 3) visible = 3;
-  if (visible > 6) visible = 6;
-
-  int top = g_library.selectedItem - (visible / 2);
-  if (top < 0) top = 0;
-  if (top > totalItems - visible) top = max(0, totalItems - visible);
-
-  for (int i = 0; i < visible; i++) {
-    int idx = top + i;
-    if (idx >= totalItems) break;
-
-    String label = libraryEntryLabel(idx);
-    bool isSystem = (g_library.entryTypes[idx] == LIB_ENTRY_BOOKMARKS ||
-                     g_library.entryTypes[idx] == LIB_ENTRY_LIST ||
-                     g_library.entryTypes[idx] == LIB_ENTRY_ABOUT ||
-                     g_library.entryTypes[idx] == LIB_ENTRY_UPLOAD);
-    bool boldText = (idx == g_library.selectedItem);
-    drawMenuBulletRow(y, label, idx == g_library.selectedItem, boldText,
-                      g_library.entryDepths[idx], isSystem);
-    y += lineH;
-  }
+  drawScrollableList(y, g_library.entryCount, g_library.selectedItem,
+    [&](int idx, int rowY, bool selected, int /*budget*/) {
+      drawMenuRow(rowY, libraryEntryLabel(idx), selected, libraryRowIndent(idx));
+      return 1;
+    });
 
   display.update();
 }

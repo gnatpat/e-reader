@@ -1,8 +1,9 @@
 #include "ui/text.h"
 
-#include "hal/display.h"          // u8g2 + MAIN_FONT + getMetrics
-#include "storage/page_cache.h"   // offset cache + savePageOffsetCacheForBook
-#include "ui/reader.h"            // g_reader
+#include "hal/display.h"            // u8g2 + MAIN_FONT + getMetrics
+#include "storage/page_cache.h"     // offset cache + savePageOffsetCacheForBook
+#include "storage/settings_store.h" // g_settings — fontSize/lineGap for cache stamping
+#include "ui/reader.h"              // g_reader
 
 // Measure-width adapter so `paginatePage` can ask the u8g2 instance about
 // rendered widths under the current font.
@@ -16,17 +17,19 @@ uint32_t readPageFromFile(File& f, uint32_t startPos, bool draw, String* outText
   u8g2.setFont(MAIN_FONT);
 
   int cursorY = TOP_PAD + m.ascent;
-  auto onLine = [&](const String& line) {
+  auto onLine = [&](const char* buf, size_t len) {
     if (draw) {
       u8g2.setCursor(MARGIN_X, cursorY);
-      u8g2.print(line.c_str());
+      u8g2.print(buf);
       cursorY += m.lineH;
     }
     if (outText) {
-      String t = line;
-      t.trim();
-      (*outText) += t;
-      (*outText) += "\n";
+      // Trim leading whitespace (paginator already trims trailing).
+      const char* start = buf;
+      size_t remaining = len;
+      while (remaining > 0 && (*start == ' ' || *start == '\t')) { start++; remaining--; }
+      outText->concat(start, remaining);
+      outText->concat('\n');
     }
   };
 
@@ -91,8 +94,32 @@ void ensureOffsetsUpTo(int targetPage) {
   if (g_reader.cursor.pageIndex < 0) g_reader.cursor.pageIndex = 0;
 
   if (addedOffsets && (g_reader.pages.count % 50 == 0 || g_reader.pages.eofReached)) {
-    if (g_reader.book.isOpen()) savePageOffsetCacheForBook(g_reader.book.path(), g_reader.book.size(), g_reader.pages);
+    if (g_reader.book.isOpen()) {
+      savePageOffsetCacheForBook(g_reader.book.path(), g_reader.book.size(),
+                                 g_settings.fontSize, g_settings.lineGap,
+                                 g_reader.pages);
+    }
   }
+}
+
+int findPageForOffset(uint32_t targetOffset) {
+  // Paginate forward until the last known page starts at or past the target,
+  // or we hit EOF / the max page limit. ensureOffsetsUpTo(count) extends by
+  // one page each call.
+  while (!g_reader.pages.eofReached
+      && g_reader.pages.count > 0
+      && g_reader.pages.offsets[g_reader.pages.count - 1] < targetOffset
+      && g_reader.pages.count < MAX_PAGES) {
+    int prev = g_reader.pages.count;
+    ensureOffsetsUpTo(prev);
+    if (g_reader.pages.count == prev) break;   // no progress = give up
+  }
+  // The page containing `targetOffset` is the largest N with
+  // offsets[N] <= targetOffset.
+  for (int i = g_reader.pages.count - 1; i >= 0; i--) {
+    if (g_reader.pages.offsets[i] <= targetOffset) return i;
+  }
+  return 0;
 }
 
 uint32_t resolveBookmarkOffset(const String& path, uint16_t page, uint32_t storedOffset) {

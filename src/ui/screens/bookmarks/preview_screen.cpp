@@ -1,6 +1,7 @@
 #include "ui/screens/bookmarks/preview_screen.h"
 
 #include "storage/page_cache.h"
+#include "storage/settings_store.h"  // g_settings — fontSize/lineGap for cache stamping
 #include "ui/reader.h"
 #include "ui/screens/bookmarks/bookmark_list_screen.h"
 #include "ui/screens/reader_screen.h"
@@ -27,7 +28,9 @@ void BookmarkPreviewScreen::onButton(const ButtonEvent& e) {
     // Commit — keep the book open, hand off to reader. Force-save progress
     // at the bookmark's page so a sleep-before-render still resumes here.
     saveProgressThrottled(true);
-    savePageOffsetCacheForBook(g_reader.book.path(), g_reader.book.size(), g_reader.pages);
+    savePageOffsetCacheForBook(g_reader.book.path(), g_reader.book.size(),
+                               g_settings.fontSize, g_settings.lineGap,
+                               g_reader.pages);
     nextScreen = &g_readerScreen;
     return;
   }
