@@ -29,9 +29,15 @@ bool loadPageOffsetCacheForBook(const String& path, size_t expectedSize,
 void savePageOffsetCacheForBook(const String& path, size_t fileSize,
                                 const PageOffsetTable& in);
 
-// Wipes the RAM LRU offset cache, deletes every pc_*.bin file, and resets
-// per-book NVS progress + bookmark offsets. Does NOT touch g_reader's
-// in-memory pagination state — callers that have a book open should use
-// `resetAllPagination()` in ui/reader.h instead, which wraps this and
-// resets the open reader's state too.
+// Remove the on-disk page-cache file for `path` (no-op if absent).
+void deletePageCacheForBook(const String& path);
+
+// Move the on-disk page-cache file from `oldPath` to `newPath` (no-op if
+// no source file). If a stale destination exists, it's removed first.
+void renamePageCacheForBook(const String& oldPath, const String& newPath);
+
+// Wipes the RAM LRU offset cache and deletes every pc_*.bin file on disk.
+// Does NOT touch saved progress or bookmark offsets — those are separate
+// concerns. For the full "layout changed, reset everything" composition,
+// use `resetAllPagination()` in storage/book_metadata.h.
 void invalidateAllPageCaches();

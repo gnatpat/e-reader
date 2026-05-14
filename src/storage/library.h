@@ -51,3 +51,7 @@ void loadBooks();
 bool libraryFolderExists(const String& folderRel);
 String libraryEntryLabel(int idx);
 void buildLibraryEntries();
+
+// Folder expand/collapse cursor state on `g_library`.
+bool isFolderExpanded(int idx);
+void setFolderExpanded(int idx, bool expanded);

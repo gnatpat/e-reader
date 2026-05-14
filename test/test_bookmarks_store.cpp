@@ -1,6 +1,6 @@
 #include "test_framework.h"
 #include "map_kv_store.h"
-#include "storage/bookmarks.h"
+#include "storage/book_metadata.h"
 
 TEST_CASE("loadBookmarks returns empty when key is absent") {
   MapKvStore kv;

@@ -1,7 +1,6 @@
 #include "ui/screens/library_screen.h"
 
 #include "hal/display.h"
-#include "storage/book_state.h"
 #include "storage/library.h"
 #include "storage/list_items.h"
 #include "storage/settings_store.h"  // g_settings.lineGap
@@ -15,10 +14,14 @@
 #include "ui/widgets.h"
 
 void LibraryScreen::onEnter() {
-  safeCloseCurrentBook();
+  // Full reset on every library entry. Web/upload flows run from here, so
+  // by clearing now, downstream code never has to reason about stale
+  // reader state. NVS holds whatever persistent state matters. Wake state
+  // doesn't need clearing — it's consumed at boot, so it's already empty
+  // during runtime unless the reader has explicitly set it for next-boot.
+  clearCurrentBookState();
   resetBookmarkSession();
   resetNavigationState();
-  syncWakeState(false);
   draw();
 }
 

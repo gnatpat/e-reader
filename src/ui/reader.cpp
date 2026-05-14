@@ -2,59 +2,87 @@
 
 #include "hal/display.h"
 #include "pure/hashing.h"
-#include "storage/book_state.h"
-#include "storage/bookmarks.h"
+#include "storage/book_metadata.h"
 #include "storage/library.h"   // g_library — openBookByIndex reads it
 #include "storage/page_cache.h"
 #include "storage/preferences_store.h"
 
-// The active reader session. Produced by `openBookByIndex()` below,
-// torn down by `clearCurrentBookState()` / `safeCloseCurrentBook()` in
-// `storage/book_state.cpp`.
-ReaderState g_reader;
 #include "ui/screens/library_screen.h"  // navigateToLibraryRoot — fallback on error
 #include "ui/text.h"
 
-bool openBookByIndex(int idx) {
-  safeCloseCurrentBook();
-  if (idx < 0 || idx >= g_library.bookCount) return false;
+// The active reader session. Produced by `openBookByIndex()` below,
+// fully torn down by `clearCurrentBookState()` on leaving the reader.
+ReaderState g_reader;
 
-  String path = String(g_library.books[idx].path);
+// ============================================================================
+//  OpenBook — file + path + key managed together. Strong invariant:
+//  `isOpen()` ⇔ `path()` is non-empty. Public callers never observe
+//  the file-closed-with-path-still-set intermediate state.
+// ============================================================================
+bool OpenBook::open(const String& path) {
+  close();
   File f = FS.open(path, "r");
   if (!f || f.isDirectory()) {
     if (f) f.close();
     return false;
   }
+  file_ = f;
+  path_ = path;
+  key_  = prefKeyForBook(path);
+  return true;
+}
 
-  g_reader.file = f;
-  setCurrentBook(path);
+void OpenBook::close() {
+  if (file_) file_.close();
+  path_ = "";
+  key_  = "";
+}
+
+void armResumeOnWake() {
+  if (!g_reader.book.isOpen()) return;
+  prefs.putString("wake_path", g_reader.book.path());
+}
+
+void clearResumeOnWake() {
+  prefs.remove("wake_path");
+}
+
+// ============================================================================
+//  Reader operations
+// ============================================================================
+bool openBookByIndex(int idx) {
+  g_reader.book.close();
+  if (idx < 0 || idx >= g_library.bookCount) return false;
+
+  String path = String(g_library.books[idx].path);
+  if (!g_reader.book.open(path)) return false;
+
   g_reader.pages.count = 1;
   g_reader.pages.offsets[0] = 0;
-  g_reader.eofReached = false;
-  loadPageOffsetCacheForBook(path, g_reader.file.size(), g_reader.pages);
-  g_reader.pageIndex = prefs.getInt((g_reader.currentBookKey + "_p").c_str(), 0);
-  if (g_reader.pageIndex < 0) g_reader.pageIndex = 0;
-  g_reader.pageTurnsSinceFull = 0;
+  g_reader.pages.eofReached = false;
+  loadPageOffsetCacheForBook(path, g_reader.book.size(), g_reader.pages);
+  g_reader.cursor.pageIndex = prefs.getInt((g_reader.book.key() + "_p").c_str(), 0);
+  if (g_reader.cursor.pageIndex < 0) g_reader.cursor.pageIndex = 0;
+  g_reader.cursor.pageTurnsSinceFull = 0;
   resetSaveThrottle();
-  syncWakeState(true, path);
 
   storeOffsetCache(path, 0, 0);
 
-  int warmTarget = g_reader.pageIndex + PREFETCH_AHEAD_PAGES;
+  int warmTarget = g_reader.cursor.pageIndex + PREFETCH_AHEAD_PAGES;
   if (warmTarget < 1) warmTarget = 1;
   ensureOffsetsUpTo(warmTarget);
   return true;
 }
 
 void drawStatusBar(uint32_t startOffset) {
-  size_t total = g_reader.file.size();
+  size_t total = g_reader.book.size();
   if (total == 0) total = 1;
 
   int pageTextW = 0;
   if (SHOW_PAGE_NUMBER) {
     u8g2.setFont(PAGE_FONT);
     char buf[20];
-    snprintf(buf, sizeof(buf), "%d", g_reader.pageIndex + 1);
+    snprintf(buf, sizeof(buf), "%d", g_reader.cursor.pageIndex + 1);
     pageTextW = u8g2.getUTF8Width(buf);
     u8g2.setCursor(SCREEN_W - MARGIN_X - pageTextW, SCREEN_H - 1);
     u8g2.print(buf);
@@ -78,52 +106,49 @@ void drawStatusBar(uint32_t startOffset) {
   }
 }
 
-void renderCurrentPage() {
-  if (!g_reader.file && !reopenCurrentBookIfNeeded()) {
-    drawCenter("Open failed", "Back to library");
-    navigateToLibraryRoot();
-    return;
-  }
+// State normalization for rendering: lazily paginates up to the cursor,
+// clamps the cursor to a valid range, and recovers from out-of-file
+// offsets. Returns false if the book has nothing renderable (empty file
+// or no pages) — caller should show an error and bail.
+//
+// All g_reader mutations triggered by rendering are concentrated here;
+// the actual draw in renderCurrentPage is read-only on session state
+// (modulo pageTurnsSinceFull, which is render-side bookkeeping).
+static bool prepareForRender() {
+  if (g_reader.book.size() == 0) return false;
+  ensureOffsetsUpTo(g_reader.cursor.pageIndex);
+  if (g_reader.pages.count <= 0) return false;
 
-  if (!g_reader.file || g_reader.file.isDirectory()) {
-    drawCenter("Open failed", "Back to library");
-    navigateToLibraryRoot();
-    return;
-  }
+  if (g_reader.cursor.pageIndex < 0) g_reader.cursor.pageIndex = 0;
+  if (g_reader.cursor.pageIndex >= g_reader.pages.count)
+    g_reader.cursor.pageIndex = g_reader.pages.count - 1;
 
-  size_t bookSize = g_reader.file.size();
-  if (bookSize == 0) {
-    drawCenter("Book empty", "Back to library");
-    navigateToLibraryRoot();
-    return;
-  }
-
-  ensureOffsetsUpTo(g_reader.pageIndex);
-  if (g_reader.pages.count <= 0) {
-    drawCenter("Book empty", "Back to library");
-    navigateToLibraryRoot();
-    return;
-  }
-
-  if (g_reader.pageIndex < 0) g_reader.pageIndex = 0;
-  if (g_reader.pageIndex >= g_reader.pages.count) g_reader.pageIndex = g_reader.pages.count - 1;
-
-  if (g_reader.pages.offsets[g_reader.pageIndex] >= bookSize) {
-    g_reader.pageIndex = 0;
+  if (g_reader.pages.offsets[g_reader.cursor.pageIndex] >= g_reader.book.size()) {
+    g_reader.cursor.pageIndex = 0;
     g_reader.pages.count = 1;
     g_reader.pages.offsets[0] = 0;
-    g_reader.eofReached = false;
+    g_reader.pages.eofReached = false;
+  }
+  return true;
+}
+
+void renderCurrentPage() {
+  // Strong invariant: if we got here, a book is open. The reader screen
+  // is never active otherwise.
+  if (!prepareForRender()) {
+    drawCenter("Book empty", "Back to library");
+    navigateToLibraryRoot();
+    return;
   }
 
-  uint32_t start = g_reader.pages.offsets[g_reader.pageIndex];
-  g_reader.lastPageStartOffset = start;
-  g_reader.file.seek(start);
+  uint32_t start = g_reader.pages.offsets[g_reader.cursor.pageIndex];
+  g_reader.book.file().seek(start);
 
-  bool doFull = (g_reader.pageTurnsSinceFull >= FULL_REFRESH_EVERY_N_PAGES);
+  bool doFull = (g_reader.cursor.pageTurnsSinceFull >= FULL_REFRESH_EVERY_N_PAGES);
   if (doFull) {
     display.fastmodeOff();
     display.clear();
-    g_reader.pageTurnsSinceFull = 0;
+    g_reader.cursor.pageTurnsSinceFull = 0;
   } else {
     display.fastmodeOn();
   }
@@ -131,7 +156,7 @@ void renderCurrentPage() {
   beginPageCanvas();
   u8g2.setFont(MAIN_FONT);
 
-  uint32_t nextOff = readPageFromFile(g_reader.file, start, true, nullptr);
+  uint32_t nextOff = readPageFromFile(g_reader.book.file(), start, true, nullptr);
   (void)nextOff;
 
   bool toastActive = (g_toast.untilMs != 0) && ((int32_t)(millis() - g_toast.untilMs) <= 0);
@@ -141,72 +166,47 @@ void renderCurrentPage() {
   display.update();
 }
 
+bool tryRestoreReadingSession() {
+  // Single-shot: read wake intent, then clear it. From this point on
+  // (during this runtime session) wake state is empty unless the reader
+  // re-arms it on its way into deep sleep.
+  String wp = prefs.getString("wake_path", "");
+  clearResumeOnWake();
+
+  if (wp.length() == 0) return false;
+
+  for (int i = 0; i < g_library.bookCount; i++) {
+    if (strcmp(g_library.books[i].path, wp.c_str()) != 0) continue;
+    if (!openBookByIndex(i)) return false;
+    // Force a full e-ink refresh on the first post-wake render — partial
+    // refresh would leave the sleep image showing through.
+    g_reader.cursor.pageTurnsSinceFull = FULL_REFRESH_EVERY_N_PAGES;
+    return true;
+  }
+  return false;
+}
+
 void idlePrefetchReader() {
   // Only ReaderScreen::onIdleTick calls this, and the dispatcher only ticks
   // the active screen, so "we're in the reader" + "preview isn't active"
-  // are guaranteed by construction. Just guard the file/EOF state.
+  // are guaranteed by construction.
   static uint32_t lastIdlePrefetchMs = 0;
-  if (!g_reader.file) return;
-  if (g_reader.eofReached) return;
+  if (!g_reader.book.isOpen()) return;
+  if (g_reader.pages.eofReached) return;
   uint32_t now = millis();
   if ((uint32_t)(now - lastIdlePrefetchMs) < 60) return;
   lastIdlePrefetchMs = now;
-  ensureOffsetsUpTo(g_reader.pageIndex + READER_IDLE_PREFETCH_PAGES);
+  ensureOffsetsUpTo(g_reader.cursor.pageIndex + READER_IDLE_PREFETCH_PAGES);
 }
 
 // ============================================================================
-//  Reader lifecycle helpers. Own the transitions on `g_reader` — opening,
-//  closing, renaming, clearing. All storage operations they need are
-//  delegated to the pure storage API.
+//  Full reader reset — used when leaving the reader entirely.
 // ============================================================================
-void setCurrentBook(const String& path) {
-  g_reader.currentBookPath = path;
-  g_reader.currentBookKey  = (path.length() > 0) ? prefKeyForBook(path) : String("");
-}
-
-void safeCloseCurrentBook() {
-  if (g_reader.file) g_reader.file.close();
-}
-
 void clearCurrentBookState() {
-  safeCloseCurrentBook();
-  setCurrentBook("");
-  g_reader.pageIndex = 0;
-  g_reader.pages.count = 0;
-  g_reader.eofReached = false;
-  g_reader.lastPageStartOffset = 0;
-  g_reader.pageTurnsSinceFull = 0;
-  g_reader.lastSaveMs = 0;
-  g_reader.lastSavedPage = -1;
-}
-
-bool reopenCurrentBookIfNeeded() {
-  if (g_reader.currentBookPath.length() == 0) return false;
-  safeCloseCurrentBook();
-  g_reader.file = FS.open(g_reader.currentBookPath, "r");
-  return (bool)g_reader.file;
-}
-
-void renameBook(const String& oldPath, const String& newPath) {
-  migrateBookMetadata(oldPath, newPath);
-  if (g_reader.currentBookPath == oldPath) {
-    setCurrentBook(newPath);
-  }
-}
-
-void resetAllPagination() {
-  invalidateAllPageCaches();   // storage: RAM LRU + pc_*.bin + per-book NVS
-  if (g_reader.currentBookPath.length() > 0) {
-    g_reader.pageIndex = 0;
-    g_reader.pages.count = 1;
-    g_reader.pages.offsets[0] = 0;
-    g_reader.eofReached = false;
-    resetSaveThrottle();
-    if (g_reader.currentBookKey.length() > 0) {
-      PreferencesStore kv(prefs);
-      kv.putInt((g_reader.currentBookKey + "_p").c_str(), 0);
-    }
-  }
+  g_reader.book.close();
+  g_reader.cursor = ReaderCursor{};
+  g_reader.pages  = PageOffsetTable{};
+  g_reader.save   = SaveThrottle{};
 }
 
 // ============================================================================
@@ -216,35 +216,35 @@ void resetAllPagination() {
 //  concerns.
 // ============================================================================
 void resetSaveThrottle() {
-  g_reader.lastSaveMs = 0;
-  g_reader.lastSavedPage = -1;
+  g_reader.save = SaveThrottle{};
 }
 
 void saveProgressThrottled(bool force) {
-  if (g_reader.currentBookKey.length() == 0) return;
+  if (!g_reader.book.isOpen()) return;
 
   if (!force) {
-    if (g_reader.pageIndex == g_reader.lastSavedPage) return;
+    if (g_reader.cursor.pageIndex == g_reader.save.lastSavedPage) return;
     uint32_t now = millis();
-    if (g_reader.lastSaveMs != 0 && (now - g_reader.lastSaveMs) < SAVE_EVERY_MS) return;
+    if (g_reader.save.lastSaveMs != 0 && (now - g_reader.save.lastSaveMs) < SAVE_EVERY_MS) return;
   }
 
   PreferencesStore kv(prefs);
-  saveSavedPage(kv, g_reader.currentBookKey, g_reader.pageIndex);
-  g_reader.lastSaveMs = millis();
-  g_reader.lastSavedPage = g_reader.pageIndex;
+  saveSavedPage(kv, g_reader.book.key(), g_reader.cursor.pageIndex);
+  g_reader.save.lastSaveMs = millis();
+  g_reader.save.lastSavedPage = g_reader.cursor.pageIndex;
 }
 
 const char* addBookmarkForCurrentBook() {
-  if (g_reader.currentBookKey.length() == 0) return nullptr;
+  if (!g_reader.book.isOpen()) return nullptr;
 
   PreferencesStore kv(prefs);
-  Bookmarks bm = loadBookmarks(kv, g_reader.currentBookKey);
+  Bookmarks bm = loadBookmarks(kv, g_reader.book.key());
 
-  const char* msg = addBookmark(bm, (uint16_t)g_reader.pageIndex, g_reader.lastPageStartOffset);
+  uint32_t pageOff = g_reader.pages.offsets[g_reader.cursor.pageIndex];
+  const char* msg = addBookmark(bm, (uint16_t)g_reader.cursor.pageIndex, pageOff);
   if (String(msg) == "Bookmark saved") {
-    saveBookmarks(kv, g_reader.currentBookKey, bm);
-    if (g_reader.file) savePageOffsetCacheForBook(g_reader.currentBookPath, g_reader.file.size(), g_reader.pages);
+    saveBookmarks(kv, g_reader.book.key(), bm);
+    savePageOffsetCacheForBook(g_reader.book.path(), g_reader.book.size(), g_reader.pages);
   }
   return msg;
 }

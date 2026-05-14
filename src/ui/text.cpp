@@ -38,10 +38,10 @@ uint32_t buildNextOffsetFor(File& f, uint32_t startPos) {
 }
 
 uint32_t buildNextOffset(uint32_t startPos) {
-  uint32_t next = readPageFromFile(g_reader.file, startPos, false, nullptr);
+  uint32_t next = readPageFromFile(g_reader.book.file(), startPos, false, nullptr);
   // Use file size instead of available() for reliable EOF detection.
   // available() is unreliable after internal seeks inside paginatePage.
-  if (next >= (uint32_t)g_reader.file.size()) g_reader.eofReached = true;
+  if (next >= (uint32_t)g_reader.book.size()) g_reader.pages.eofReached = true;
   return next;
 }
 
@@ -74,24 +74,24 @@ void ensureOffsetsUpTo(int targetPage) {
   }
 
   bool addedOffsets = false;
-  while (!g_reader.eofReached && g_reader.pages.count <= targetPage && g_reader.pages.count < MAX_PAGES) {
+  while (!g_reader.pages.eofReached && g_reader.pages.count <= targetPage && g_reader.pages.count < MAX_PAGES) {
     uint32_t start = g_reader.pages.offsets[g_reader.pages.count - 1];
     uint32_t next = buildNextOffset(start);
     if (next <= start) {
-      g_reader.eofReached = true;
+      g_reader.pages.eofReached = true;
       break;
     }
     g_reader.pages.offsets[g_reader.pages.count] = next;
-    storeOffsetCache(g_reader.currentBookPath, g_reader.pages.count, next);
+    storeOffsetCache(g_reader.book.path(), g_reader.pages.count, next);
     g_reader.pages.count++;
     addedOffsets = true;
   }
 
-  if (g_reader.pageIndex >= g_reader.pages.count) g_reader.pageIndex = g_reader.pages.count - 1;
-  if (g_reader.pageIndex < 0) g_reader.pageIndex = 0;
+  if (g_reader.cursor.pageIndex >= g_reader.pages.count) g_reader.cursor.pageIndex = g_reader.pages.count - 1;
+  if (g_reader.cursor.pageIndex < 0) g_reader.cursor.pageIndex = 0;
 
-  if (addedOffsets && (g_reader.pages.count % 50 == 0 || g_reader.eofReached)) {
-    if (g_reader.file) savePageOffsetCacheForBook(g_reader.currentBookPath, g_reader.file.size(), g_reader.pages);
+  if (addedOffsets && (g_reader.pages.count % 50 == 0 || g_reader.pages.eofReached)) {
+    if (g_reader.book.isOpen()) savePageOffsetCacheForBook(g_reader.book.path(), g_reader.book.size(), g_reader.pages);
   }
 }
 

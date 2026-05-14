@@ -1,10 +1,6 @@
 #include "storage/page_cache.h"
 
-#include "storage/library.h"  // g_library (used by invalidateAllPageCaches)
-
-#include "storage/bookmarks.h"        // loadBookmarks / saveBookmarks
-#include "storage/preferences_store.h"
-#include "pure/hashing.h"
+#include "pure/hashing.h"   // prefKeyForBook (used in pageCachePathForBook)
 
 // ============================================================================
 //  RAM offset cache — single instance owned here; external callers go
@@ -84,20 +80,32 @@ void savePageOffsetCacheForBook(const String& path, size_t fileSize,
   f.close();
 }
 
+void deletePageCacheForBook(const String& path) {
+  String cachePath = pageCachePathForBook(path);
+  if (FS.exists(cachePath)) FS.remove(cachePath);
+}
+
+void renamePageCacheForBook(const String& oldPath, const String& newPath) {
+  String oldCache = pageCachePathForBook(oldPath);
+  if (!FS.exists(oldCache)) return;
+  String newCache = pageCachePathForBook(newPath);
+  if (FS.exists(newCache)) FS.remove(newCache);
+  FS.rename(oldCache, newCache);
+}
+
 void invalidateAllPageCaches() {
   // Page offsets are computed from the current font size and line spacing.
-  // When either changes, ALL cached offsets are invalid -- both the in-memory
-  // LRU and the on-disk .bin files. We also reset the saved page index to 0
-  // for every book, because page N at font size 8 is a completely different
-  // byte position at font size 12.
+  // When either changes, both the in-memory LRU and the on-disk .bin files
+  // are stale and have to go.
   //
-  // This is the storage half. Callers with a book currently open should use
-  // `resetAllPagination()` in ui/reader.h, which calls this and then also
-  // resets the open reader's in-memory state.
-
+  // Per-book saved progress + bookmark byte offsets are also stale at this
+  // point — those live in `storage/book_metadata.cpp` and are reset there by
+  // `resetAllSavedProgress` + `invalidateAllBookmarkOffsets`. The full
+  // "layout changed, reset everything" composition is `resetAllPagination()`
+  // in `storage/book_metadata.h`, which is what callers actually invoke
+  // when font size or line spacing changes.
   resetOffsetCache();
 
-  // Remove all on-disk page-cache files (pc_*.bin)
   File root = FS.open("/");
   if (root && root.isDirectory()) {
     File f = root.openNextFile();
@@ -111,20 +119,5 @@ void invalidateAllPageCaches() {
     root.close();
   } else if (root) {
     root.close();
-  }
-
-  // Reset progress and bookmark offsets for every book. Bookmark page numbers
-  // are kept but offsets are set to 0xFFFFFFFF so they get recomputed on next
-  // access.
-  PreferencesStore kv(prefs);
-  for (int i = 0; i < g_library.bookCount; i++) {
-    String key = prefKeyForBook(String(g_library.books[i].path));
-    kv.putInt((key + "_p").c_str(), 0);
-
-    Bookmarks bm = loadBookmarks(kv, key);
-    if (bm.count > 0) {
-      for (uint8_t j = 0; j < bm.count; j++) bm.offsets[j] = 0xFFFFFFFFUL;
-      saveBookmarks(kv, key, bm);
-    }
   }
 }

@@ -2,7 +2,7 @@
 
 #include "hal/display.h"
 #include "pure/hashing.h"
-#include "storage/bookmarks.h"
+#include "storage/book_metadata.h"
 #include "storage/library.h"         // g_library
 #include "storage/settings_store.h"  // g_settings.lineGap
 #include "ui/reader.h"
@@ -90,8 +90,8 @@ void BookmarkListScreen::onButton(const ButtonEvent& e) {
     if (g_bookmarkSession.count == 0) return;
 
     if (openBookByIndex(g_bookmarkSession.bookIndex)) {
-      g_reader.pageIndex = (int)g_bookmarkSession.pages[g_bookmarkSession.selectedIndex];
-      if (g_reader.pageIndex < 0) g_reader.pageIndex = 0;
+      g_reader.cursor.pageIndex = (int)g_bookmarkSession.pages[g_bookmarkSession.selectedIndex];
+      if (g_reader.cursor.pageIndex < 0) g_reader.cursor.pageIndex = 0;
       nextScreen = &g_bmPreviewScreen;
     } else {
       nextScreen = &g_libraryScreen;

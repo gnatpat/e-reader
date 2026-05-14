@@ -7,14 +7,13 @@
 #include "hal/display.h"
 #include "pure/hashing.h"
 #include "pure/paths.h"
-#include "storage/book_state.h"
-#include "storage/bookmarks.h"
+#include "storage/book_metadata.h"
 #include "storage/fs_util.h"
 #include "storage/library.h"
 #include "storage/list_items.h"
 #include "storage/page_cache.h"
+#include "storage/preferences_store.h"
 #include "storage/settings_store.h"
-#include "ui/reader.h"   // renderCurrentPage for font-change live-reflow
 #include "ui/screens/bookmarks/preview_screen.h"
 #include "ui/screens/library_screen.h"
 #include "ui/screens/list_screen.h"
@@ -292,12 +291,8 @@ static void handleDelete() {
     return;
   }
 
+  // Library entry already cleared g_reader; no book is "current" here.
   String path = String(g_library.books[id].path);
-  if (g_reader.currentBookPath == path) {
-    clearCurrentBookState();
-    syncWakeState(false);
-  }
-
   if (FS.exists(path)) FS.remove(path);
   deleteBookMetadata(path);
   resetOffsetCache();
@@ -397,17 +392,14 @@ static void handleMoveBook() {
     return;
   }
 
-  bool wasCurrent = (g_reader.currentBookPath == oldPath);
-  if (wasCurrent && g_reader.file) g_reader.file.close();
-
+  // Library entry already cleared g_reader; no book is "current" here.
   if (!FS.rename(oldPath, newPath)) {
     server.send(500, "text/plain; charset=utf-8", "move failed");
     return;
   }
 
-  renameBook(oldPath, newPath);
+  migrateBookMetadata(oldPath, newPath);   // NVS keys + page-cache file
   resetOffsetCache();
-  if (wasCurrent) g_reader.file = FS.open(newPath, "r");
 
   server.sendHeader("Location", "/files");
   server.send(302, "text/plain", "");
@@ -430,19 +422,11 @@ static void handleJumpPageWeb() {
   if (page < 1) page = 1;
   int zeroBasedPage = page - 1;
 
+  // Library entry already cleared g_reader; just write the NVS target page.
+  // The reader will load it the next time the user opens this book.
   String path = String(g_library.books[id].path);
-  String key = prefKeyForBook(path);
-  prefs.putInt((key + "_p").c_str(), zeroBasedPage);
-
-  if (g_reader.currentBookPath == path) {
-    g_reader.pageIndex = zeroBasedPage;
-    if (g_reader.pageIndex < 0) g_reader.pageIndex = 0;
-    resetSaveThrottle();
-    saveProgressThrottled(true);
-    if (g_reader.file) {
-      savePageOffsetCacheForBook(g_reader.currentBookPath, g_reader.file.size(), g_reader.pages);
-    }
-  }
+  PreferencesStore kv(prefs);
+  saveSavedPage(kv, prefKeyForBook(path), zeroBasedPage);
 
   server.sendHeader("Location", "/files");
   server.send(302, "text/plain", "");
@@ -713,11 +697,12 @@ static void handleExportBookmarksWeb() {
 }
 
 static void doFactoryReset() {
-  safeCloseCurrentBook();
-  clearCurrentBookState();
+  // g_reader was cleared on library entry (which we passed through to get
+  // to upload mode, where this handler is served). The remaining helpers
+  // wipe ambient ui/library state — wake state and the rest of NVS are
+  // nuked by prefs.clear() below.
   resetUiEphemeralState();
   resetNavigationState();
-  syncWakeState(false);
 
   prefs.clear();
   FS.end();
@@ -968,15 +953,11 @@ static void handleSettingsPost() {
   }
 
   if (layoutChanged) {
-    // resetAllPagination() wipes caches AND resets the open reader's
-    // pageIndex to 0. Call it BEFORE renderCurrentPage() so the page is
-    // redrawn from byte 0 with the new font metrics -- not from the
-    // now-invalid old page number.
+    // Wipe everything keyed to the old layout. Font changes take effect the
+    // next time a book is opened from the library — there's no live reflow
+    // path because the web server is only active in upload mode, which the
+    // reader can't be running underneath.
     resetAllPagination();
-    if (g_currentScreen == &g_readerScreen || g_currentScreen == &g_bmPreviewScreen) {
-      if (g_currentScreen != &g_readerScreen) g_currentScreen->nextScreen = &g_readerScreen;
-      else renderCurrentPage();
-    }
   }
 
   server.sendHeader("Location", "/settings");

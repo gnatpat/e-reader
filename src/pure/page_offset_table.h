@@ -11,7 +11,11 @@
 // `offsets[i]` is the start byte of page `i`. Valid entries are `[0, count)`.
 // `count == 0` means "empty / no entries yet" (caller will typically seed
 // `offsets[0] = 0` and set `count = 1` before reading).
+//
+// `eofReached` distinguishes "we haven't paginated this far yet" from
+// "there are no more pages." Without it, `pageIndex >= count` is ambiguous.
 struct PageOffsetTable {
   uint32_t offsets[MAX_PAGES];
-  int count = 0;
+  int  count = 0;
+  bool eofReached = false;
 };

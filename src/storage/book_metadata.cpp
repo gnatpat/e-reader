@@ -1,4 +1,4 @@
-#include "storage/bookmarks.h"
+#include "storage/book_metadata.h"
 
 // ============================================================================
 //  Testable KV-store-backed API
@@ -49,9 +49,10 @@ void renameBookMetadata(KeyValueStore& kv, const String& oldKey, const String& n
 
 #ifdef ARDUINO
 // ============================================================================
-//  Firmware glue — wraps the pure KV API with a PreferencesStore around the
-//  global `prefs` so callers can keep their existing call sites.
+//  Firmware glue
 // ============================================================================
+#include "storage/library.h"           // g_library (bulk invalidation iterates books)
+#include "storage/page_cache.h"        // deletePageCacheForBook / renamePageCacheForBook
 #include "storage/preferences_store.h"
 
 uint8_t loadBookmarksForKey(const String& bookKey,
@@ -83,5 +84,42 @@ void saveBookmarksForKey(const String& bookKey,
 int savedPageForBookPath(const String& path) {
   PreferencesStore kv(prefs);
   return loadSavedPage(kv, prefKeyForBook(path));
+}
+
+void resetAllSavedProgress() {
+  PreferencesStore kv(prefs);
+  for (int i = 0; i < g_library.bookCount; i++) {
+    String key = prefKeyForBook(String(g_library.books[i].path));
+    saveSavedPage(kv, key, 0);
+  }
+}
+
+void invalidateAllBookmarkOffsets() {
+  PreferencesStore kv(prefs);
+  for (int i = 0; i < g_library.bookCount; i++) {
+    String key = prefKeyForBook(String(g_library.books[i].path));
+    Bookmarks bm = loadBookmarks(kv, key);
+    if (bm.count == 0) continue;
+    for (uint8_t j = 0; j < bm.count; j++) bm.offsets[j] = 0xFFFFFFFFUL;
+    saveBookmarks(kv, key, bm);
+  }
+}
+
+void resetAllPagination() {
+  invalidateAllPageCaches();         // page_cache: RAM LRU + pc_*.bin
+  resetAllSavedProgress();           // per-book NVS saved page -> 0
+  invalidateAllBookmarkOffsets();    // per-book bookmark offsets -> unknown
+}
+
+void deleteBookMetadata(const String& path) {
+  PreferencesStore kv(prefs);
+  clearBookMetadata(kv, prefKeyForBook(path));   // NVS: progress + bookmarks
+  deletePageCacheForBook(path);                  // disk: pc_<hash>.bin
+}
+
+void migrateBookMetadata(const String& oldPath, const String& newPath) {
+  PreferencesStore kv(prefs);
+  renameBookMetadata(kv, prefKeyForBook(oldPath), prefKeyForBook(newPath));
+  renamePageCacheForBook(oldPath, newPath);
 }
 #endif  // ARDUINO

@@ -5,24 +5,59 @@
 #include "pure/page_offset_table.h"
 
 // ============================================================================
-//  The active reader session — currently-open book + pagination state.
-//  Produced by `openBookByIndex()`, cleaned up by the lifecycle helpers
-//  below, and read by `reader.cpp` / `text.cpp` while a book is open.
+//  The active reader session — split into four focused pieces.
+//
+//  Strong invariant: a book is "open" iff `book.isOpen()` returns true,
+//  and that's true iff `book.path()` is non-empty. The file handle, path,
+//  and derived NVS key always move as a unit through `OpenBook`'s methods.
+//
+//  Library / upload / web flows fully clear `g_reader` on leaving the
+//  reader (see `LibraryScreen::onEnter`), so non-reader code never has to
+//  reason about stale book state.
 // ============================================================================
-struct ReaderState {
-  File file;
-  String currentBookKey;
-  String currentBookPath;
-  int pageIndex = 0;             // cursor: which page the user is viewing
 
-  PageOffsetTable pages;         // map: page index -> absolute byte offset
-  bool eofReached = false;
+// File handle + path + derived NVS key, managed together. The class enforces
+// the invariant "file is open iff path is non-empty" — public callers can't
+// observe the file-closed-with-path-still-set intermediate state.
+class OpenBook {
+public:
+  // Open `path` for reading. Sets path + key + opens file as one atomic
+  // step. Returns false (and leaves the object closed/empty) if the file
+  // can't be opened or is a directory.
+  bool open(const String& path);
 
-  uint32_t lastPageStartOffset = 0;
+  // Close the file and clear path + key. No-op if already closed.
+  void close();
+
+  bool          isOpen() const { return (bool)file_; }
+  const String& path() const   { return path_; }
+  const String& key() const    { return key_; }
+  File&         file()         { return file_; }
+  size_t        size()         { return file_ ? file_.size() : 0; }
+
+private:
+  File   file_;
+  String path_;
+  String key_;
+};
+
+// UI cursor state: where the user is looking + how long since a full refresh.
+struct ReaderCursor {
+  int pageIndex = 0;
   int pageTurnsSinceFull = 0;
+};
 
+// Throttle bookkeeping for periodic progress-save to NVS.
+struct SaveThrottle {
   uint32_t lastSaveMs = 0;
-  int lastSavedPage = -1;
+  int      lastSavedPage = -1;
+};
+
+struct ReaderState {
+  OpenBook        book;
+  PageOffsetTable pages;
+  ReaderCursor    cursor;
+  SaveThrottle    save;
 };
 
 extern ReaderState g_reader;
@@ -32,37 +67,25 @@ void drawStatusBar(uint32_t startOffset);
 void renderCurrentPage();
 void idlePrefetchReader();
 
+// Boot-time wake-resume. Checks if wake state asks us to resume reading and
+// if the book still exists. On success the reader is fully set up for an
+// immediate renderCurrentPage(); the caller owns the actual render and the
+// screen transition.
+bool tryRestoreReadingSession();
+
+// Wake state — a single NVS key (`wake_path`) that survives deep sleep and
+// tells `setup()` whether to resume the reader on next boot. Owned by the
+// reader: armed by `ReaderScreen::onSleep` (via `armResumeOnWake`),
+// consumed and cleared at boot by `tryRestoreReadingSession`. Nothing
+// outside the reader should touch it.
+void armResumeOnWake();    // arm: persist currently-open book for resume
+void clearResumeOnWake();  // disarm: next wake lands in library
+
 // ============================================================================
-//  Reader lifecycle — owns the open-book transitions on `g_reader`.
+//  Reader lifecycle — full reset of every piece of `g_reader`. Called when
+//  leaving the reader entirely (library entry, factory reset).
 // ============================================================================
-
-// Single source of truth for the (path, key) invariant. Empty path leaves an
-// empty key (i.e. "no book open"), not the hash of an empty string.
-void setCurrentBook(const String& path);
-
-// Close the open file if any. No-op if nothing is open.
-void safeCloseCurrentBook();
-
-// Reset the entire reader struct to "no book open". Equivalent to
-// safeCloseCurrentBook + setCurrentBook("") + zeroing the pagination state.
 void clearCurrentBookState();
-
-// Re-open the book at `g_reader.currentBookPath` (e.g. after the web layer
-// closed the file under our feet). Returns true on success. No-op if there
-// is no current path.
-bool reopenCurrentBookIfNeeded();
-
-// Rename a book on disk. Updates NVS metadata, page cache, and wake_path via
-// storage; keeps `g_reader` in sync if it happens to be holding this book.
-// The caller is responsible for the actual `FS.rename()` of the file.
-void renameBook(const String& oldPath, const String& newPath);
-
-// Called when font size or line spacing changes — every cached page offset
-// is now meaningless. Wraps `invalidateAllPageCaches()` (storage: wipes the
-// RAM LRU, deletes pc_*.bin, resets per-book NVS progress + bookmark offsets)
-// and then resets the open reader's in-memory pagination state so the next
-// draw paginates from byte 0 with the new metrics.
-void resetAllPagination();
 
 // ============================================================================
 //  Progress + bookmark glue — manipulates `g_reader`, persists via storage.

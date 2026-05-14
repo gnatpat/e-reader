@@ -2,7 +2,6 @@
 
 #include "hal/input.h"           // ButtonState + ButtonEvent
 #include "state.h"
-#include "storage/book_state.h"  // syncWakeState — default Screen::onSleep
 
 class Screen {
 public:
@@ -12,10 +11,12 @@ public:
   virtual void draw() = 0;
   virtual void onIdleTick() {}
 
-  // Called once just before the device deep-sleeps. Default: clear wake state
-  // so the next boot lands on the library. Screens that want to resume their
-  // state (reader, bookmark preview) override to save progress + set wake.
-  virtual void onSleep() { syncWakeState(false); }
+  // Called once just before the device deep-sleeps. Default: no-op — wake
+  // state is empty during runtime (consumed at boot) and stays that way
+  // unless ReaderScreen::onSleep explicitly sets it. Screens that need to
+  // do per-sleep work (reader: save progress + arm wake; preview: close
+  // open book) override this.
+  virtual void onSleep() {}
 
   // May the device deep-sleep while this screen is active? Default yes;
   // UploadScreen overrides to false because a sleeping device can't keep the

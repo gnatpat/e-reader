@@ -7,6 +7,7 @@ public:
   void onEnter() override;
   void onButton(const ButtonEvent& e) override;
   void draw() override;
+  void onSleep() override;
 };
 
 extern BookmarkPreviewScreen g_bmPreviewScreen;

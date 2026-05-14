@@ -2,7 +2,6 @@
 
 #include "pure/paths.h"
 #include "state.h"                   // FS macro
-#include "storage/book_state.h"      // bookLeafLabel, isFolderExpanded
 #include "storage/fs_util.h"         // ensureBooksDir
 #include "storage/list_items.h"      // loadListItems, listHasVisibleItems
 #include "storage/page_cache.h"      // resetOffsetCache
@@ -150,13 +149,23 @@ String libraryEntryLabel(int idx) {
       String prefix = isFolderExpanded(folderIdx) ? "- " : "+ ";
       return prefix + folderLeafLabel(String(g_library.folders[folderIdx]));
     }
-    case LIB_ENTRY_BOOK:      return bookLeafLabel(g_library.entryRefs[idx]);
+    case LIB_ENTRY_BOOK:      return bookLeafLabel(String(g_library.books[g_library.entryRefs[idx]].path));
     case LIB_ENTRY_BOOKMARKS: return "Bookmarks";
     case LIB_ENTRY_LIST:      return "List";
     case LIB_ENTRY_ABOUT:     return "Device";
     case LIB_ENTRY_UPLOAD:    return "Upload";
   }
   return "";
+}
+
+bool isFolderExpanded(int idx) {
+  if (idx < 0 || idx >= g_library.folderCount) return false;
+  return g_library.folderExpanded[idx];
+}
+
+void setFolderExpanded(int idx, bool expanded) {
+  if (idx < 0 || idx >= g_library.folderCount) return;
+  g_library.folderExpanded[idx] = expanded;
 }
 
 static void addLibraryBookEntry(int bookIdx, int depth) {

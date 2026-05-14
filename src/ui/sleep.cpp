@@ -9,9 +9,7 @@
 #include "config.h"
 #include "state.h"
 #include "hal/display.h"
-#include "storage/book_state.h"
 #include "ui/pala_one_sleep_black_icon_v4.h"
-#include "ui/reader.h"     // safeCloseCurrentBook
 #include "ui/screen.h"
 
 void drawSleepScreen() {
@@ -37,14 +35,12 @@ void drawSleepScreen() {
 void goToSleep() {
   if (!ENABLE_DEEP_SLEEP) return;
 
-  // Each screen decides how to persist itself for resume. Default is
-  // "clear wake state" (defined in screen.h); reader 
-  // overrides to save progress + set wake_mode for resume.
+  // Each screen owns its own sleep cleanup: ReaderScreen + BookmarkPreview
+  // close the open book; everything else (library, list, etc.) holds no
+  // book under the strong invariant and just clears wake state.
   if (g_currentScreen) g_currentScreen->onSleep();
 
   delay(50);
-
-  safeCloseCurrentBook();
 
   drawSleepScreen();
   delay(600);

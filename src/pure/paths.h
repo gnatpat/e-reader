@@ -19,6 +19,10 @@ String prettyRelativeLabel(const String& relPath);
 // Last component with '_' -> ' '. For UI display.
 String folderLeafLabel(const String& relPath);
 
+// Display label for a book path: strip the leading folders, strip the
+// ".txt" suffix, replace '_' with ' '.
+String bookLeafLabel(const String& path);
+
 // Byte-level character set used by sanitizeFolderSegment.
 bool isAllowedFolderByte(uint8_t c);
 

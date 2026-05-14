@@ -4,45 +4,108 @@ Captured from a code-review pass. Roughly ordered by payoff-per-effort.
 
 ## 1. Invert the storage → ui dependency — DONE
 
-`storage/page_cache.cpp`, `storage/book_state.cpp`, `storage/bookmarks.cpp`,
-and `storage/settings_store.cpp` all used to include `ui/reader.h` or
-`hal/display.h` and reach into `g_reader` / `g_toast` directly. Now they
-don't — `grep '^#include\s+"(ui|hal)/' src/storage/` returns empty.
+Started as "stop storage from `#include`ing `ui/...`," ended as a broader
+file-by-file reshape of `src/storage/`. Two principles drove the work:
 
-What moved:
-- Reader-lifecycle helpers (`safeCloseCurrentBook`, `clearCurrentBookState`,
-  `reopenCurrentBookIfNeeded`, `saveProgressThrottled`, `resetSaveThrottle`,
-  `addBookmarkForCurrentBook`) → `ui/reader.cpp`.
-- `resetUiEphemeralState` (clears the toast) → `hal/display.cpp`.
-- `resetNavigationState` (clears the library cursor) → `ui/screens/library_screen.cpp`.
-- `applyFontSize` orchestration moved out of `storage/settings_store.cpp`;
-  the caller (`main.cpp::setup`) now drives it.
+1. **Vertical**: storage is below ui — a file in `storage/` may include
+   `pure/` (lower) but never `ui/` or `hal/` (higher).
+2. **Horizontal**: each storage file owns one nameable concept. If you
+   can't describe it in a single line, it's the wrong grouping.
 
-New helpers introduced:
-- `setCurrentBook(path)` in `ui/reader.cpp` — single source of truth for
-  the `(currentBookPath, currentBookKey)` invariant.
-- `renameBook(oldPath, newPath)` in `ui/reader.cpp` — wraps
-  `migrateBookMetadata` (storage primitive) and keeps `g_reader` in sync.
-- `resetAllPagination()` in `ui/reader.cpp` — wraps
-  `invalidateAllPageCaches` (storage primitive) and resets the open
-  reader's in-memory state.
-- `PageOffsetTable` struct in `pure/page_offset_table.h` — replaces
-  `g_reader.pageOffsets[] + knownPages`, lets storage take the buffer as
-  a typed parameter instead of writing into a global.
+### Verification
 
-Signature changes:
-- `loadPageOffsetCacheForBook` and `savePageOffsetCacheForBook` now take
-  a `PageOffsetTable&` / `const PageOffsetTable&` instead of writing into
+- `grep '^#include\s+"(ui|hal)/' src/storage/` → empty
+- Every file under `src/storage/` has a one-line description (see table
+  at the bottom of this section)
+
+### Functions that moved up to ui/
+
+Storage had quietly been doing reader-state work. These were lifted out:
+
+| Function | New home |
+|---|---|
+| `safeCloseCurrentBook`, `clearCurrentBookState`, `reopenCurrentBookIfNeeded` | `ui/reader.cpp` |
+| `saveProgressThrottled`, `resetSaveThrottle`, `addBookmarkForCurrentBook` | `ui/reader.cpp` |
+| `resetUiEphemeralState` (clears `g_toast`) | `hal/display.cpp` |
+| `resetNavigationState` (clears the library cursor) | `ui/screens/library_screen.cpp` |
+| `applyFontSize` orchestration (was called from inside `loadSettings`) | caller (`main.cpp::setup`) |
+
+### New helpers introduced
+
+| Helper | Where | Why |
+|---|---|---|
+| `setCurrentBook(path)` | `ui/reader.cpp` | Single source of truth for the `(currentBookPath, currentBookKey)` invariant |
+| `renameBook(oldPath, newPath)` | `ui/reader.cpp` | Wraps `migrateBookMetadata`; updates `g_reader` and wake target if the open book is being renamed |
+| `resetAllPagination()` | `ui/reader.cpp` | Composes the three "layout changed" storage primitives + resets open reader's in-memory state |
+| `PageOffsetTable` struct | `pure/page_offset_table.h` | Replaces `g_reader.pageOffsets[] + knownPages`; lets storage take the buffer as a typed parameter |
+| `bookLeafLabel(path)` | `pure/paths.cpp` | Sibling of `folderLeafLabel`; was previously a firmware-only `g_library`-indexed helper |
+
+### Signature changes
+
+- `loadPageOffsetCacheForBook` / `savePageOffsetCacheForBook` now take a
+  `PageOffsetTable&` / `const PageOffsetTable&` instead of writing into
   `g_reader` directly.
-- `syncWakeState` now takes an explicit `path` argument instead of
-  reading `g_reader.currentBookPath`.
+- `syncWakeState` now takes an explicit `path` arg instead of reading
+  `g_reader.currentBookPath`.
 
-Follow-ups this unlocked:
-- The `#ifdef ARDUINO` walls in `storage/bookmarks.cpp` and
-  `storage/list_items.cpp` can be revisited — some of what they guard
-  is now straightforwardly host-testable.
-- Refactor #2 (split `g_reader`) is partly done: `PageOffsetTable` is
-  one of the four pieces that refactor was going to extract.
+### File reorganization (second-round cleanup)
+
+After moving functions to the right *layer*, several `storage/` files were
+in the wrong *neighborhood*:
+
+- `storage/bookmarks.{h,cpp}` was renamed to `storage/book_metadata.{h,cpp}`.
+  The name was misleading — the file owned bookmarks AND saved-page progress
+  AND their joint lifecycle (clear, rename, bulk-invalidate). All three are
+  "per-book NVS state" and follow the same lifecycle, so they share a file;
+  the new name says so.
+- `storage/book_state.{h,cpp}` was deleted entirely. Its contents were
+  misc, not coherent:
+  - `deleteBookMetadata` / `migrateBookMetadata` → `book_metadata.cpp`
+    (they're per-book NVS lifecycle composers)
+  - `isFolderExpanded` / `setFolderExpanded` → `library.cpp` (touches
+    `g_library`, which lives there)
+  - `bookLeafLabel(int idx)` → became pure `bookLeafLabel(path)` in
+    `pure/paths.cpp` (it was just path formatting)
+  - `syncWakeState` → new `storage/wake_state.{h,cpp}` (device-level wake
+    intention, not per-book state)
+- `page_cache.cpp` lost two cross-cutting concerns it had been carrying:
+  the per-book bookmark/progress invalidation in `invalidateAllPageCaches`
+  moved to `book_metadata.cpp` (as `resetAllSavedProgress` +
+  `invalidateAllBookmarkOffsets`), and the `pc_*.bin` rename/delete logic
+  inside `migrateBookMetadata` / `deleteBookMetadata` became
+  `renamePageCacheForBook` / `deletePageCacheForBook` primitives that
+  `book_metadata.cpp` calls.
+
+### Dead-code dropped along the way
+
+- The `wake_path` branch inside `deleteBookMetadata` — always a no-op given
+  `handleDelete` clears wake state before calling it.
+- The duplicate `kv.putInt(..._p, 0)` at the end of `invalidateAllPageCaches`
+  — redundant with the per-book loop earlier in the same function.
+- The unused `static PreferencesStore makeKv()` helper in `bookmarks.cpp`.
+- Stale `pageOffsets[]` / `knownPages` direct accesses (all converted to
+  `pages.offsets[]` / `pages.count` after the struct extraction).
+
+### Final shape of src/storage/
+
+| File | Owns |
+|---|---|
+| `book_metadata.{h,cpp}` | Per-book NVS state — bookmarks, saved progress, joint lifecycle (delete/rename/bulk invalidate) |
+| `wake_state.{h,cpp}` | Device wake intention (`wake_mode`, `wake_path`) |
+| `library.{h,cpp}` | Library catalog + folder UI state |
+| `page_cache.{h,cpp}` | Page-offset RAM LRU + `pc_*.bin` files |
+| `list_items.{h,cpp}` | Todo list |
+| `settings_store.{h,cpp}` | Runtime settings load |
+| `fs_util.{h,cpp}` | Filesystem setup |
+| `preferences_store.h`, `kv_store.h` | KV interface + Preferences adapter |
+
+### Follow-ups this unlocked
+
+- The `#ifdef ARDUINO` walls in `storage/book_metadata.cpp` and
+  `storage/list_items.cpp` can be revisited — some of what they guard is
+  now straightforwardly host-testable.
+- Refactor #2 (split `g_reader`) is partly done: `PageOffsetTable` is one
+  of the four pieces that refactor was going to extract.
 
 ## 2. `g_reader` is a god-struct — partly done
 

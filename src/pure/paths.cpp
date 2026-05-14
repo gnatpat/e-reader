@@ -32,6 +32,12 @@ String folderLeafLabel(const String& relPath) {
   return leaf;
 }
 
+String bookLeafLabel(const String& path) {
+  String leaf = stripTxtExt(lastPathComponent(path));
+  leaf.replace('_', ' ');
+  return leaf;
+}
+
 bool isAllowedFolderByte(uint8_t c) {
   return ((c >= 'a' && c <= 'z') ||
           (c >= 'A' && c <= 'Z') ||

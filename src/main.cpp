@@ -7,7 +7,6 @@
 #include "hal/display.h"
 #include "hal/input.h"
 #include "pure/hashing.h"
-#include "storage/book_state.h"
 #include "storage/fs_util.h"
 #include "storage/library.h"
 #include "storage/page_cache.h"
@@ -84,26 +83,11 @@ void setup() {
   registerWebRoutes();
   markUserActivity();
 
-  bool restored = false;
-  if (prefs.getInt("wake_mode", 0) == 1) {
-    String wp = prefs.getString("wake_path", "");
-    if (wp.length() > 0) {
-      for (int i = 0; i < g_library.bookCount; i++) {
-        if (strcmp(g_library.books[i].path, wp.c_str()) == 0) {
-          if (openBookByIndex(i)) {
-            g_reader.pageTurnsSinceFull = FULL_REFRESH_EVERY_N_PAGES;
-            renderCurrentPage();   // draw first — takes ~300ms, user releases button during this
-            resetInputFrontend();  // then discard the wake-press only
-            g_currentScreen = &g_readerScreen;
-            restored = true;
-          }
-          break;
-        }
-      }
-    }
-  }
-
-  if (!restored) {
+  if (tryRestoreReadingSession()) {
+    renderCurrentPage();      // ~300ms draw — wake-press releases during this
+    resetInputFrontend();     // then discard the wake-press only
+    g_currentScreen = &g_readerScreen;
+  } else {
     g_currentScreen = &g_libraryScreen;
     g_libraryScreen.onEnter();
     resetInputFrontend();

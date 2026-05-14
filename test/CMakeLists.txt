@@ -21,7 +21,7 @@ set(SUT_SRC
   ${CMAKE_SOURCE_DIR}/../src/pure/bookmarks_codec.cpp
   ${CMAKE_SOURCE_DIR}/../src/pure/list_codec.cpp
   ${CMAKE_SOURCE_DIR}/../src/pure/offset_cache.cpp
-  ${CMAKE_SOURCE_DIR}/../src/storage/bookmarks.cpp
+  ${CMAKE_SOURCE_DIR}/../src/storage/book_metadata.cpp
   ${CMAKE_SOURCE_DIR}/../src/storage/list_items.cpp
 )
 
