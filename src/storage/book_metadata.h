@@ -27,7 +27,7 @@ void saveBookmarks(KeyValueStore& kv, const String& bookKey, const Bookmarks& bm
 // stale display hint (used by the web file list and as a legacy fallback for
 // books saved by older firmware that didn't store offsets).
 //
-// `loadSavedOffset` returns 0xFFFFFFFF if no offset has been saved yet.
+// `loadSavedOffset` returns `kOffsetUnset` if no offset has been saved yet.
 int      loadSavedPage(KeyValueStore& kv, const String& bookKey);
 void     saveSavedPage(KeyValueStore& kv, const String& bookKey, int pageIndex);
 uint32_t loadSavedOffset(KeyValueStore& kv, const String& bookKey);

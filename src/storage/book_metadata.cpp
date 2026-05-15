@@ -29,7 +29,7 @@ void saveSavedPage(KeyValueStore& kv, const String& bookKey, int pageIndex) {
 uint32_t loadSavedOffset(KeyValueStore& kv, const String& bookKey) {
   // Stored as int; -1 (default when key absent) sentinels "not set."
   int v = kv.getInt((bookKey + "_off").c_str(), -1);
-  return (v < 0) ? 0xFFFFFFFFUL : (uint32_t)v;
+  return (v < 0) ? kOffsetUnset : (uint32_t)v;
 }
 
 void saveSavedOffset(KeyValueStore& kv, const String& bookKey, uint32_t byteOffset) {

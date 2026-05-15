@@ -56,6 +56,6 @@ void ReaderScreen::onSleep() {
   savePageOffsetCacheForBook(g_bookview.book.path(), g_bookview.book.size(),
                              g_settings.fontSize, g_settings.lineGap,
                              g_bookview.pages);
-  armResumeOnWake();
-  g_bookview.book.close();   // release LittleFS handle before deep sleep
+  armResumeOnWake();        // captures path before resetBookView() drops it
+  resetBookView();
 }

@@ -48,7 +48,8 @@ void BookmarkPreviewScreen::onButton(const ButtonEvent& e) {
 
 void BookmarkPreviewScreen::onSleep() {
   // Preview is transient — don't commit progress, don't arm wake state.
-  // Just release the file handle for LittleFS hygiene; next boot will land
-  // in library because wake state stays empty.
-  g_bookview.book.close();
+  // Wake state stays empty, so next boot lands in library; resetBookView()
+  // drops the file handle plus the cursor/pages so we don't leave any
+  // half-state for the (eventual) library entry to mop up.
+  resetBookView();
 }

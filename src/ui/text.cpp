@@ -1,6 +1,7 @@
 #include "ui/text.h"
 
 #include "hal/display.h"            // u8g2 + MAIN_FONT + getMetrics
+#include "pure/bookmarks_codec.h"   // kOffsetUnset
 #include "storage/page_cache.h"     // offset cache + savePageOffsetCacheForBook
 #include "storage/settings_store.h" // g_settings — fontSize/lineGap for cache stamping
 #include "ui/reader.h"              // g_bookview
@@ -127,7 +128,7 @@ uint32_t resolveBookmarkOffset(const String& path, uint16_t page, uint32_t store
   if (!f) return 0;
 
   size_t size = f.size();
-  if (storedOffset != 0xFFFFFFFFUL && storedOffset < size) {
+  if (storedOffset != kOffsetUnset && storedOffset < size) {
     storeOffsetCache(path, page, storedOffset);
     f.close();
     return storedOffset;

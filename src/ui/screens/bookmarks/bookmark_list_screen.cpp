@@ -80,11 +80,11 @@ void BookmarkListScreen::onButton(const ButtonEvent& e) {
       // label; the offset is the source of truth for "where the user was."
       //
       // Legacy fallback: bookmarks saved by earlier firmware may have had
-      // their offset invalidated to 0xFFFFFFFF on font change. For those,
+      // their offset invalidated to `kOffsetUnset` on font change. For those,
       // fall back to the stored page number — wrong-but-stable behavior
       // matching the old code. They'll heal next time the user re-saves.
       uint32_t off = g_bookmarkSession.offsets[g_bookmarkSession.selectedIndex];
-      if (off == 0xFFFFFFFFUL) {
+      if (off == kOffsetUnset) {
         int storedPage = (int)g_bookmarkSession.pages[g_bookmarkSession.selectedIndex];
         if (storedPage < 0) storedPage = 0;
         g_bookview.cursor.pageIndex = storedPage;

@@ -61,7 +61,6 @@ struct BookView {
 extern BookView g_bookview;
 
 bool openBookByIndex(int idx);
-void drawStatusBar(uint32_t startOffset);
 void renderCurrentPage();
 void idlePrefetchReader();
 
@@ -82,10 +81,9 @@ bool tryRestoreReadingSession();
 // Wake state — a single NVS key (`wake_path`) that survives deep sleep and
 // tells `setup()` whether to resume the reader on next boot. Owned by the
 // reader: armed by `ReaderScreen::onSleep` (via `armResumeOnWake`),
-// consumed and cleared at boot by `tryRestoreReadingSession`. Nothing
-// outside the reader should touch it.
+// consumed and cleared at boot by `tryRestoreReadingSession`. The clear
+// side is private to reader.cpp; nothing else needs to disarm.
 void armResumeOnWake();    // arm: persist currently-open book for resume
-void clearResumeOnWake();  // disarm: next wake lands in library
 
 // ============================================================================
 //  View lifecycle — full reset of every piece of `g_bookview` (and the reader's

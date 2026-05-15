@@ -38,8 +38,8 @@ TEST_CASE("bookmarks codec decodes legacy v1 (page-only) entries") {
   CHECK_EQ(bm.pages[1], 10);
   CHECK_EQ(bm.pages[2], 200);
   // Legacy entries get the "recompute" placeholder.
-  CHECK_EQ(bm.offsets[0], 0xFFFFFFFFu);
-  CHECK_EQ(bm.offsets[1], 0xFFFFFFFFu);
+  CHECK_EQ(bm.offsets[0], kOffsetUnset);
+  CHECK_EQ(bm.offsets[1], kOffsetUnset);
 }
 
 TEST_CASE("bookmarks codec clamps overflow count to MAX_BOOKMARKS") {
@@ -52,9 +52,9 @@ TEST_CASE("bookmarks codec clamps overflow count to MAX_BOOKMARKS") {
 
 TEST_CASE("addBookmark adds a new bookmark and keeps sorted by page") {
   Bookmarks bm;
-  CHECK_EQ(addBookmark(bm, 10, 1000), String("Bookmark saved"));
-  CHECK_EQ(addBookmark(bm, 3,  300),  String("Bookmark saved"));
-  CHECK_EQ(addBookmark(bm, 7,  700),  String("Bookmark saved"));
+  CHECK(addBookmark(bm, 10, 1000).added);
+  CHECK(addBookmark(bm, 3,  300).added);
+  CHECK(addBookmark(bm, 7,  700).added);
   CHECK_EQ(bm.count, 3);
   CHECK_EQ(bm.pages[0], 3);
   CHECK_EQ(bm.pages[1], 7);
@@ -65,7 +65,9 @@ TEST_CASE("addBookmark adds a new bookmark and keeps sorted by page") {
 TEST_CASE("addBookmark refuses duplicate page") {
   Bookmarks bm;
   addBookmark(bm, 5, 500);
-  CHECK_EQ(addBookmark(bm, 5, 555), String("Bookmark exists"));
+  BookmarkAddResult r = addBookmark(bm, 5, 555);
+  CHECK(!r.added);
+  CHECK_EQ(String(r.message), String("Bookmark exists"));
   CHECK_EQ(bm.count, 1);
 }
 

@@ -170,7 +170,7 @@ void LibraryScreen::draw() {
   if (s_cursor < 0) s_cursor = 0;
   if (s_cursor >= s_entryCount) s_cursor = max(0, s_entryCount - 1);
 
-  int y = drawSectionHeader("Library");
+  int y = drawSectionHeader("Pala One");
 
   drawScrollableList(y, s_entryCount, s_cursor,
     [&](int idx, int rowY, bool selected, int /*budget*/) {

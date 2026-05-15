@@ -18,8 +18,13 @@ struct Bookmarks {
 // Size of the largest possible encoded blob (v2: 1 + MAX_BOOKMARKS * 6 bytes).
 constexpr size_t BOOKMARKS_ENCODED_MAX_SIZE = 1u + (size_t)MAX_BOOKMARKS * 6u;
 
+// Sentinel for "no byte offset known yet." Used for legacy v1 bookmark
+// entries (no offset recorded) and for `loadSavedOffset` when no offset
+// has been persisted. The firmware recomputes a real offset on demand.
+constexpr uint32_t kOffsetUnset = 0xFFFFFFFFu;
+
 // Decode `got` bytes from `buf` into `out`. Legacy v1 entries get an
-// offset of 0xFFFFFFFF (placeholder — firmware will recompute).
+// offset of `kOffsetUnset` (placeholder — firmware will recompute).
 // Returns the decoded count (always == out.count).
 uint8_t decodeBookmarks(const uint8_t* buf, size_t got, Bookmarks& out);
 
@@ -27,8 +32,14 @@ uint8_t decodeBookmarks(const uint8_t* buf, size_t got, Bookmarks& out);
 // Returns the number of bytes written (== 1 + bm.count * 6).
 size_t encodeBookmarks(const Bookmarks& bm, uint8_t* outBuf);
 
-// Insert one bookmark at the current page/offset. Returns:
-//   "Bookmark saved"  on success (sorted by page)
-//   "Bookmark exists" if a bookmark for `page` already exists
-// If the bookmark list is full, the oldest bookmark is evicted.
-const char* addBookmark(Bookmarks& bm, uint16_t page, uint32_t offset);
+// Result of inserting one bookmark. `added` is the success signal; `message`
+// is a UI-facing string the caller can pass straight to the toast layer.
+struct BookmarkAddResult {
+  bool        added;
+  const char* message;
+};
+
+// Insert one bookmark at the current page/offset. If the bookmark list is
+// full, the oldest bookmark is evicted. Returns `{true,  "Bookmark saved"}`
+// on insertion or `{false, "Bookmark exists"}` if `page` is already bookmarked.
+BookmarkAddResult addBookmark(Bookmarks& bm, uint16_t page, uint32_t offset);

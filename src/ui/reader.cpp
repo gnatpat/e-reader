@@ -12,7 +12,7 @@
 #include "ui/text.h"
 
 // The currently open book and where the user is looking. Produced by
-// `openBookByIndex()` below, fully torn down by `clearView()` on leaving
+// `openBookByIndex()` below, fully torn down by `resetBookView()` on leaving
 // the reader.
 BookView g_bookview;
 
@@ -60,7 +60,7 @@ void armResumeOnWake() {
   prefs.putString("wake_path", g_bookview.book.path());
 }
 
-void clearResumeOnWake() {
+static void clearResumeOnWake() {
   prefs.remove("wake_path");
 }
 
@@ -88,7 +88,7 @@ bool openBookByIndex(int idx) {
   // the next save.
   PreferencesStore kv(prefs);
   uint32_t savedOffset = loadSavedOffset(kv, g_bookview.book.key());
-  if (savedOffset != 0xFFFFFFFFUL) {
+  if (savedOffset != kOffsetUnset) {
     g_bookview.cursor.pageIndex = findPageForOffset(savedOffset);
   } else {
     g_bookview.cursor.pageIndex = loadSavedPage(kv, g_bookview.book.key());
@@ -105,7 +105,7 @@ bool openBookByIndex(int idx) {
   return true;
 }
 
-void drawStatusBar(uint32_t startOffset) {
+static void drawStatusBar(uint32_t startOffset) {
   size_t total = g_bookview.book.size();
   if (total == 0) total = 1;
 
@@ -302,12 +302,12 @@ const char* addBookmarkForCurrentBook() {
   Bookmarks bm = loadBookmarks(kv, g_bookview.book.key());
 
   uint32_t pageOff = g_bookview.pages.offsets[g_bookview.cursor.pageIndex];
-  const char* msg = addBookmark(bm, (uint16_t)g_bookview.cursor.pageIndex, pageOff);
-  if (String(msg) == "Bookmark saved") {
+  BookmarkAddResult r = addBookmark(bm, (uint16_t)g_bookview.cursor.pageIndex, pageOff);
+  if (r.added) {
     saveBookmarks(kv, g_bookview.book.key(), bm);
     savePageOffsetCacheForBook(g_bookview.book.path(), g_bookview.book.size(),
                                g_settings.fontSize, g_settings.lineGap,
                                g_bookview.pages);
   }
-  return msg;
+  return r.message;
 }

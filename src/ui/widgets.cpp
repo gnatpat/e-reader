@@ -12,14 +12,8 @@ int drawSectionHeader(const char* title) {
   int ascent = u8g2.getFontAscent();
   int yTitle = UI_HEADER_TOP + ascent - 2;
 
-  // Library = Pala One, other screens = their own title
-  const char* headerText = "Pala One";
-  if (title && strcmp(title, "Library") != 0) {
-    headerText = title;
-  }
-
   u8g2.setCursor(MARGIN_X, yTitle);
-  u8g2.print(headerText);
+  u8g2.print(title);
 
 #if HAS_BATTERY
   drawBatteryTopRight();

@@ -23,7 +23,7 @@ uint8_t decodeBookmarks(const uint8_t* buf, size_t got, Bookmarks& out) {
     for (uint8_t i = 0; i < count; i++) {
       size_t base = 1u + (size_t)i * 2u;
       out.pages[i] = (uint16_t)(buf[base + 0] | (buf[base + 1] << 8));
-      out.offsets[i] = 0xFFFFFFFFu;
+      out.offsets[i] = kOffsetUnset;
     }
   }
   out.count = count;
@@ -50,9 +50,9 @@ size_t encodeBookmarks(const Bookmarks& bm, uint8_t* outBuf) {
   return 1u + (size_t)count * 6u;
 }
 
-const char* addBookmark(Bookmarks& bm, uint16_t page, uint32_t offset) {
+BookmarkAddResult addBookmark(Bookmarks& bm, uint16_t page, uint32_t offset) {
   for (uint8_t i = 0; i < bm.count; i++) {
-    if (bm.pages[i] == page) return "Bookmark exists";
+    if (bm.pages[i] == page) return {false, "Bookmark exists"};
   }
 
   if (bm.count < MAX_BOOKMARKS) {
@@ -84,5 +84,5 @@ const char* addBookmark(Bookmarks& bm, uint16_t page, uint32_t offset) {
     }
   }
 
-  return "Bookmark saved";
+  return {true, "Bookmark saved"};
 }
