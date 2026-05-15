@@ -93,3 +93,15 @@ void loadBooks() {
   sortFolders();
   sortBooks();
 }
+
+const char* bookPath(int idx) {
+  if (idx < 0 || idx >= g_library.bookCount) return nullptr;
+  return g_library.books[idx].path;
+}
+
+int bookIndexForPath(const String& path) {
+  for (int i = 0; i < g_library.bookCount; i++) {
+    if (strcmp(g_library.books[i].path, path.c_str()) == 0) return i;
+  }
+  return -1;
+}

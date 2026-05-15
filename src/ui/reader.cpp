@@ -10,7 +10,7 @@
 #include "ui/font.h"                    // currentBodySize/currentLineGap for cache stamping
 #include "ui/screens/library_screen.h"  // navigateToLibraryRoot — fallback on error
 #include "ui/text.h"
-#include "ui/toast.h"                   // g_toast + drawToastIfActive
+#include "ui/toast.h"                   // Toast::isActive / Toast::draw
 #include "ui/widgets.h"                 // drawCenter (error fallback)
 
 // The currently open book and where the user is looking. Produced by
@@ -67,13 +67,100 @@ static void clearResumeOnWake() {
 }
 
 // ============================================================================
+//  Active-book page table — extending g_bookview.pages forward.
+//
+//  Lives here (not in text.cpp) because every helper mutates `g_bookview`.
+//  Layered on `nextPageOffset` (a pure file/offset primitive in text.cpp).
+//
+//  Cursor clamping is intentionally NOT done here. The single canonical clamp
+//  lives in `prepareForRender` — every render path flows through it, so any
+//  out-of-range cursor that this code produces (e.g. EOF reached before the
+//  requested page) is normalized before it's observed.
+// ============================================================================
+
+// Append a known next-page offset onto the table. Used by both
+// `tryExtendPageTable` (which computes the offset via paginate) and
+// `renderCurrentPage` (which already learned it as drawPageAt's return
+// value — recording it avoids a redundant paginate on the next advance).
+// Returns true on append, false if the offset doesn't extend the table
+// (EOF, MAX_PAGES, or `next` not strictly after the last known offset).
+static bool appendPageOffset(uint32_t next) {
+  if (g_bookview.pages.count < 1) return false;
+  if (g_bookview.pages.eofReached) return false;
+  if (g_bookview.pages.count >= MAX_PAGES) return false;
+
+  uint32_t start = g_bookview.pages.offsets[g_bookview.pages.count - 1];
+  if (next <= start) {
+    // Paginator stuck (zero-byte page) — treat as EOF.
+    g_bookview.pages.eofReached = true;
+    return false;
+  }
+
+  g_bookview.pages.offsets[g_bookview.pages.count] = next;
+  g_bookview.pages.count++;
+
+  // At or past file end — no more pages to add. Use file size (not stream
+  // `available()`) because the paginator's internal seeks make `available()`
+  // unreliable.
+  if (next >= (uint32_t)g_bookview.book.size()) {
+    g_bookview.pages.eofReached = true;
+  }
+  return true;
+}
+
+// Extend `g_bookview.pages` by one entry. Returns true if a page was appended
+// (or the empty seed entry was created), false if no further progress is
+// possible (EOF reached or MAX_PAGES hit).
+static bool tryExtendPageTable() {
+  // Defensive seed — book just opened or anyone left the table empty.
+  if (g_bookview.pages.count < 1) {
+    g_bookview.pages.count = 1;
+    g_bookview.pages.offsets[0] = 0;
+    return true;
+  }
+  if (g_bookview.pages.eofReached) return false;
+  if (g_bookview.pages.count >= MAX_PAGES) return false;
+
+  uint32_t start = g_bookview.pages.offsets[g_bookview.pages.count - 1];
+  uint32_t next = nextPageOffset(g_bookview.book.file(), start);
+  return appendPageOffset(next);
+}
+
+// Extend the page table forward until `targetPage` is reachable, or no more
+// progress is possible (EOF / MAX_PAGES). Pure extension — no persistence
+// side effects (the explicit save points handle that — see persistReaderState).
+static void ensureOffsetsUpTo(int targetPage) {
+  while (g_bookview.pages.count <= targetPage) {
+    if (!tryExtendPageTable()) break;
+  }
+}
+
+int findPageForOffset(uint32_t targetOffset) {
+  // Extend forward until the last known page starts at or past the target,
+  // or we can't extend further.
+  while (g_bookview.pages.count == 0
+      || g_bookview.pages.offsets[g_bookview.pages.count - 1] < targetOffset) {
+    if (!tryExtendPageTable()) break;
+  }
+  // The page containing `targetOffset` is the largest N with
+  // offsets[N] <= targetOffset.
+  for (int i = g_bookview.pages.count - 1; i >= 0; i--) {
+    if (g_bookview.pages.offsets[i] <= targetOffset) return i;
+  }
+  return 0;
+}
+
+// ============================================================================
 //  Reader operations
 // ============================================================================
 bool openBookByIndex(int idx) {
-  g_bookview.book.close();
-  if (idx < 0 || idx >= g_library.bookCount) return false;
+  // Invariant: callers reset the view before calling here. `OpenBook::open`
+  // is also atomic about the file-handle swap, so a stale handle would be
+  // overwritten cleanly even if the invariant were violated.
+  const char* p = bookPath(idx);
+  if (!p) return false;
 
-  String path = String(g_library.books[idx].path);
+  String path(p);
   if (!g_bookview.book.open(path)) return false;
 
   g_bookview.pages.count = 1;
@@ -88,6 +175,10 @@ bool openBookByIndex(int idx) {
   // the current layout. If absent (legacy data from older firmware), fall
   // back to the saved page number — it'll get rewritten as an offset on
   // the next save.
+  // Both branches below produce a >= 0 page index (findPageForOffset's
+  // floor is 0; loadSavedPage clamps internally), so no extra guard needed.
+  // Any out-of-range value vs. the page table gets normalized in
+  // prepareForRender on the first draw.
   PreferencesStore kv(prefs);
   uint32_t savedOffset = loadSavedOffset(kv, g_bookview.book.key());
   if (savedOffset != kOffsetUnset) {
@@ -95,13 +186,8 @@ bool openBookByIndex(int idx) {
   } else {
     g_bookview.cursor.pageIndex = loadSavedPage(kv, g_bookview.book.key());
   }
-  if (g_bookview.cursor.pageIndex < 0) g_bookview.cursor.pageIndex = 0;
   g_bookview.cursor.pageTurnsSinceFull = 0;
   resetSaveThrottle();
-
-  int warmTarget = g_bookview.cursor.pageIndex + PREFETCH_AHEAD_PAGES;
-  if (warmTarget < 1) warmTarget = 1;
-  ensureOffsetsUpTo(warmTarget);
   return true;
 }
 
@@ -173,7 +259,6 @@ void renderCurrentPage() {
   }
 
   uint32_t start = g_bookview.pages.offsets[g_bookview.cursor.pageIndex];
-  g_bookview.book.file().seek(start);
 
   bool doFull = (g_bookview.cursor.pageTurnsSinceFull >= FULL_REFRESH_EVERY_N_PAGES);
   if (doFull) {
@@ -187,12 +272,16 @@ void renderCurrentPage() {
   beginPageCanvas();
   Font::useBody();
 
-  uint32_t nextOff = readPageFromFile(g_bookview.book.file(), start, true, nullptr);
-  (void)nextOff;
+  uint32_t nextOff = drawPageAt(g_bookview.book.file(), start);
+  // Record what render learned about the next page so a later advance
+  // doesn't re-paginate this same page. Only meaningful when the cursor is
+  // at the table's current last page; appendPageOffset is a no-op otherwise.
+  if (g_bookview.cursor.pageIndex + 1 == g_bookview.pages.count) {
+    appendPageOffset(nextOff);
+  }
 
-  bool toastActive = (g_toast.untilMs != 0) && ((int32_t)(millis() - g_toast.untilMs) <= 0);
-  if (toastActive) drawToastIfActive();
-  else drawStatusBar(start);
+  if (Toast::isActive()) Toast::draw();
+  else                   drawStatusBar(start);
 
   display.update();
 }
@@ -203,31 +292,16 @@ bool tryRestoreReadingSession() {
   // re-arms it on its way into deep sleep.
   String wp = prefs.getString("wake_path", "");
   clearResumeOnWake();
-
   if (wp.length() == 0) return false;
 
-  for (int i = 0; i < g_library.bookCount; i++) {
-    if (strcmp(g_library.books[i].path, wp.c_str()) != 0) continue;
-    if (!openBookByIndex(i)) return false;
-    // Force a full e-ink refresh on the first post-wake render — partial
-    // refresh would leave the sleep image showing through.
-    g_bookview.cursor.pageTurnsSinceFull = FULL_REFRESH_EVERY_N_PAGES;
-    return true;
-  }
-  return false;
-}
+  int idx = bookIndexForPath(wp);
+  if (idx < 0) return false;
+  if (!openBookByIndex(idx)) return false;
 
-void idlePrefetchReader() {
-  // Only ReaderScreen::onIdleTick calls this, and the dispatcher only ticks
-  // the active screen, so "we're in the reader" + "preview isn't active"
-  // are guaranteed by construction.
-  static uint32_t lastIdlePrefetchMs = 0;
-  if (!g_bookview.book.isOpen()) return;
-  if (g_bookview.pages.eofReached) return;
-  uint32_t now = millis();
-  if ((uint32_t)(now - lastIdlePrefetchMs) < 60) return;
-  lastIdlePrefetchMs = now;
-  ensureOffsetsUpTo(g_bookview.cursor.pageIndex + READER_IDLE_PREFETCH_PAGES);
+  // Force a full e-ink refresh on the first post-wake render — partial
+  // refresh would leave the sleep image showing through.
+  g_bookview.cursor.pageTurnsSinceFull = FULL_REFRESH_EVERY_N_PAGES;
+  return true;
 }
 
 // ============================================================================
@@ -237,13 +311,11 @@ void idlePrefetchReader() {
 //  screens and stays at the call site.
 // ============================================================================
 bool advancePage() {
-  int oldPage = g_bookview.cursor.pageIndex;
-  g_bookview.cursor.pageIndex++;
-  ensureOffsetsUpTo(g_bookview.cursor.pageIndex);
-  if (g_bookview.pages.eofReached && g_bookview.cursor.pageIndex >= g_bookview.pages.count)
-    g_bookview.cursor.pageIndex = g_bookview.pages.count - 1;
-  if (g_bookview.cursor.pageIndex < 0) g_bookview.cursor.pageIndex = 0;
-  if (g_bookview.cursor.pageIndex == oldPage) return false;
+  int targetPage = g_bookview.cursor.pageIndex + 1;
+  ensureOffsetsUpTo(targetPage);
+  // Couldn't extend to the requested page (EOF / MAX_PAGES) — don't move.
+  if (targetPage >= g_bookview.pages.count) return false;
+  g_bookview.cursor.pageIndex = targetPage;
   g_bookview.cursor.pageTurnsSinceFull++;
   return true;
 }
@@ -303,11 +375,22 @@ const char* addBookmarkForCurrentBook() {
 
   uint32_t pageOff = g_bookview.pages.offsets[g_bookview.cursor.pageIndex];
   BookmarkAddResult r = addBookmark(bm, (uint16_t)g_bookview.cursor.pageIndex, pageOff);
-  if (r.added) {
-    saveBookmarks(kv, g_bookview.book.key(), bm);
-    savePageOffsetCacheForBook(g_bookview.book.path(), g_bookview.book.size(),
-                               Font::currentBodySize(), Font::currentLineGap(),
-                               g_bookview.pages);
-  }
+  if (r.added) saveBookmarks(kv, g_bookview.book.key(), bm);
+  // Page table is NOT saved here — every realistic flow that adds a bookmark
+  // is followed by a sleep or explicit exit, both of which call
+  // persistReaderState(). The bookmark's offset is byte-exact and survives
+  // a re-paginate on next open if the disk cache is stale.
   return r.message;
+}
+
+// Commit everything the active reader has accumulated to durable storage.
+// Used at every "leaving" moment (sleep, exit-to-home, preview commit) so a
+// later boot or open finds both the latest cursor and a fresh page table.
+// Mid-session uses `saveProgressThrottled` for cheaper, more frequent writes.
+void persistReaderState() {
+  if (!g_bookview.book.isOpen()) return;
+  saveProgress();
+  savePageOffsetCacheForBook(g_bookview.book.path(), g_bookview.book.size(),
+                             Font::currentBodySize(), Font::currentLineGap(),
+                             g_bookview.pages);
 }

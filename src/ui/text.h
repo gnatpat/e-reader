@@ -11,22 +11,33 @@
 #include "hal/file_stream.h"
 
 // ============================================================================
-//  Firmware pagination glue — wraps `paginatePage` with the u8g2-backed
-//  width-measure function, draws to the e-ink, and threads the in-memory
-//  offset cache + page-cache file from storage.
+//  Page-level operations on a book file.
+//
+//  Three primitives that take an open `File&` + a starting byte offset and
+//  do exactly one thing each, all returning the next page's start offset:
+//
+//    drawPageAt        — render one page to the e-ink at the body font
+//    extractPageText   — append one page's text (newline-separated) to `out`
+//    nextPageOffset    — compute the next page boundary, no draw, no capture
+//
+//  All three use the pure paginator with a u8g2 width-measure adapter under
+//  the current Font::useBody(). None touch `g_bookview` — they're pure on
+//  the file argument.
+//
+//  Above those, two cross-book helpers:
+//
+//    pageOffsetForPage     — locate page N in an arbitrary file (uses disk cache)
+//    resolveBookmarkOffset — return a stored bookmark offset, or look it up
 // ============================================================================
-uint32_t readPageFromFile(File& f, uint32_t startPos, bool draw, String* outText);
-uint32_t buildNextOffsetFor(File& f, uint32_t startPos);
-uint32_t buildNextOffset(uint32_t startPos);
+uint32_t drawPageAt(File& f, uint32_t startPos);
+uint32_t extractPageText(File& f, uint32_t startPos, String& out);
+uint32_t nextPageOffset(File& f, uint32_t startPos);
+
+// Find page N's byte offset in `f` (which must be opened to `path`). Reads
+// the on-disk page cache for an O(1) start, walks forward via
+// `nextPageOffset` if the requested page is past the cached portion.
 uint32_t pageOffsetForPage(File& f, const String& path, int page);
-void ensureOffsetsUpTo(int targetPage);
+
+// Returns `storedOffset` if it's a usable cached value for this book; falls
+// back to `pageOffsetForPage` otherwise. Owns the file handle internally.
 uint32_t resolveBookmarkOffset(const String& path, uint16_t page, uint32_t storedOffset);
-
-// Find which page of the currently-open book contains `targetOffset` —
-// i.e. the largest N where `pages.offsets[N] <= targetOffset`. Paginates
-// forward as needed. Used to navigate to a bookmark whose byte offset is
-// invariant under font/layout changes (but whose stored page number may
-// be stale).
-int findPageForOffset(uint32_t targetOffset);
-
-String readPageTextForWeb(const String& path, int page);

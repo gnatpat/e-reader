@@ -16,3 +16,17 @@ extern Catalog g_library;
 // reshuffle of `g_library.folders[]` here is reflected on the next draw
 // without callers having to do anything special.
 void loadBooks();
+
+// ============================================================================
+//  Index <-> path helpers — bounds checking lives here so callers don't have
+//  to repeat `if (idx < 0 || idx >= g_library.bookCount)` everywhere.
+// ============================================================================
+
+// Returns the absolute path of the book at `idx`, or nullptr if `idx` is out
+// of range. The returned pointer aliases storage owned by `g_library` and is
+// valid until the next `loadBooks()`.
+const char* bookPath(int idx);
+
+// Returns the catalog index of the book whose path equals `path`, or -1 if
+// no book with that path exists in the current catalog.
+int bookIndexForPath(const String& path);

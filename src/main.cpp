@@ -25,6 +25,7 @@
 #include "ui/screens/upload_screen.h"
 #include "ui/sleep.h"
 #include "ui/text.h"
+#include "ui/toast.h"
 #include "web/web.h"
 
 // ============================================================================
@@ -117,6 +118,9 @@ void loop() {
 
   g_currentScreen->onButton(ev);
   g_currentScreen->onIdleTick();
+
+  // Toast just expired? Repaint so its pixels actually disappear.
+  if (Toast::clearIfExpired()) g_currentScreen->draw();
 
   if (g_currentScreen->nextScreen) {
     g_currentScreen = g_currentScreen->nextScreen;

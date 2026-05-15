@@ -33,9 +33,6 @@ static const int MAX_LIBRARY_ENTRIES = (MAX_BOOKS * 2) + (MAX_FOLDERS * 2) + 8;
 static const int MAX_LIST_ITEMS = 16;
 static const int MAX_LIST_TEXT = 64;
 
-static const int PREFETCH_AHEAD_PAGES = 1;
-static const int READER_IDLE_PREFETCH_PAGES = 1;
-
 // Max silence after the most recent release before we commit a click sequence.
 // Conceptually: "longest pause the user can take between consecutive clicks."
 static const uint32_t MAX_CLICK_GAP_MS = 300;

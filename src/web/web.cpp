@@ -150,6 +150,24 @@ static String storageCardHtml(const char* title = "Storage") {
   return out;
 }
 
+// One book page rendered as plain text — used by the bookmark export
+// download. Opens the file, locates page N's offset, captures one page's
+// worth of lines into a String. Single-caller helper; lives here rather than
+// in text.cpp because it's pure web concern (the "Open failed" / "(empty)"
+// strings are user-facing for this download flow).
+static String readPageTextForWeb(const String& path, int page) {
+  File f = FS.open(path, "r");
+  if (!f) return String("Open failed.");
+  uint32_t off = pageOffsetForPage(f, path, page);
+  String out;
+  out.reserve(900);
+  (void)extractPageText(f, off, out);
+  f.close();
+  out.trim();
+  if (out.length() == 0) out = "(empty)";
+  return out;
+}
+
 static String successPage(const String& title, const String& subtitle, const String& banner, const String& innerHtml) {
   String out = webPageStart(title, subtitle, "<a href='/'>Home</a><a href='/files'>Files</a><a href='/settings'>Settings</a>");
   out += "<div class='banner-ok'>" + banner + "</div>";
@@ -610,7 +628,7 @@ static void handleViewBookmarkWeb() {
   } else {
     uint32_t off = resolveBookmarkOffset(bookPath, (uint16_t)page, offsets[idx]);
     txt.reserve(900);
-    (void)readPageFromFile(vf, off, false, &txt);
+    (void)extractPageText(vf, off, txt);
     vf.close();
     txt.trim();
     if (txt.length() == 0) txt = "(empty)";
@@ -712,7 +730,7 @@ static void doFactoryReset() {
   // to upload mode, where this handler is served). The remaining helpers
   // wipe ambient ui/library state — wake state and the rest of NVS are
   // nuked by prefs.clear() below.
-  resetUiEphemeralState();
+  Toast::reset();
   resetLibraryNav();
 
   prefs.clear();

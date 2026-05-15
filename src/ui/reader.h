@@ -62,7 +62,6 @@ extern BookView g_bookview;
 
 bool openBookByIndex(int idx);
 void renderCurrentPage();
-void idlePrefetchReader();
 
 // Cursor navigation. Both move the cursor and bump `pageTurnsSinceFull` on
 // a real page change; `advancePage` lazily paginates one ahead and clamps
@@ -71,6 +70,13 @@ void idlePrefetchReader();
 // just renders).
 bool advancePage();
 bool retreatPage();
+
+// Find which page of the active book contains `targetOffset` — the largest
+// N where `g_bookview.pages.offsets[N] <= targetOffset`. Paginates the
+// active book forward as needed (so the page table grows up to the answer).
+// Used to resume from a saved byte offset and to navigate to a bookmark
+// whose offset is invariant under font/layout changes.
+int findPageForOffset(uint32_t targetOffset);
 
 // Boot-time wake-resume. Checks if wake state asks us to resume reading and
 // if the book still exists. On success the reader is fully set up for an
@@ -101,14 +107,19 @@ void resetBookView();
 //  does, so there's no caller outside this module that needs to see it.
 // ============================================================================
 
-// Persist the current reading position to NVS unconditionally. Used at
-// commit-style moments: reader sleeping, preview committing to a bookmark.
+// Persist the current reading position to NVS unconditionally.
 void saveProgress();
 
 // Persist the current reading position to NVS only if it has actually
 // changed since the last save AND the throttle window has elapsed. Used
 // on every page turn in the reader to bound NVS write rate.
 void saveProgressThrottled();
+
+// Commit progress + page table to durable storage. Call at every "leaving"
+// moment (sleep, exit-to-home, preview commit) so a later boot or open
+// finds both the latest cursor and a fresh on-disk page cache. No-op if
+// no book is open.
+void persistReaderState();
 
 // Add a bookmark at the currently-open view's page. Returns a UI message
 // (e.g. "Bookmark saved" / "Bookmark exists") or nullptr if no book is open.
