@@ -12,7 +12,32 @@
 #include "ui/pala_one_sleep_black_icon_v4.h"
 #include "ui/screen.h"
 
-void drawSleepScreen() {
+namespace Sleep {
+
+// Owned setting + NVS key — file-private.
+static int s_idleSecs = 120;
+static constexpr const char* kKeyIdleSecs = "cfg_sleep";
+
+void loadSettings() {
+  int s = prefs.getInt(kKeyIdleSecs, 120);
+  if (s < 10)   s = 10;
+  if (s > 3600) s = 3600;
+  s_idleSecs = s;
+}
+
+void setIdleTimeout(int secs) {
+  if (secs < 10)   secs = 10;
+  if (secs > 3600) secs = 3600;
+  s_idleSecs = secs;
+  prefs.putInt(kKeyIdleSecs, s_idleSecs);
+}
+
+int      idleTimeoutSecs() { return s_idleSecs; }
+uint32_t idleTimeoutMs()   { return (uint32_t)s_idleSecs * 1000UL; }
+
+// Render the sleep image onto the e-ink before powering down. Tries the
+// user-uploaded /sleep.bin first; falls back to the built-in icon.
+static void drawSleepScreen() {
   display.fastmodeOff();
   display.clear();
   beginPageCanvas();
@@ -32,7 +57,7 @@ void drawSleepScreen() {
   display.update();
 }
 
-void goToSleep() {
+void enter() {
   if (!ENABLE_DEEP_SLEEP) return;
 
   // Each screen owns its own sleep cleanup: ReaderScreen + BookmarkPreview
@@ -64,3 +89,5 @@ void goToSleep() {
   Serial.flush();
   esp_deep_sleep_start();
 }
+
+}  // namespace Sleep

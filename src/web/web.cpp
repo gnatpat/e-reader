@@ -13,13 +13,13 @@
 #include "storage/list_items.h"
 #include "storage/page_cache.h"
 #include "storage/preferences_store.h"
-#include "storage/settings_store.h"
 #include "ui/screens/bookmarks/preview_screen.h"
 #include "ui/screens/library_screen.h"
 #include "ui/screens/list_screen.h"
 #include "ui/screens/reader_screen.h"
 #include "ui/font.h"
 #include "ui/screens/upload_screen.h"  // owns the singleton upload session state
+#include "ui/sleep.h"
 #include "ui/text.h"
 #include "ui/toast.h"
 
@@ -844,12 +844,13 @@ static void handleSettings() {
   String sel12 = (curFont == 12) ? " selected" : "";
   String sel14 = (curFont == 14) ? " selected" : "";
 
-  String ss30 = (g_settings.sleepSecs == 30) ? " selected" : "";
-  String ss60 = (g_settings.sleepSecs == 60) ? " selected" : "";
-  String ss120 = (g_settings.sleepSecs == 120) ? " selected" : "";
-  String ss300 = (g_settings.sleepSecs == 300) ? " selected" : "";
-  String ss600 = (g_settings.sleepSecs == 600) ? " selected" : "";
-  String ss1800 = (g_settings.sleepSecs == 1800) ? " selected" : "";
+  int curSleep = Sleep::idleTimeoutSecs();
+  String ss30   = (curSleep == 30)   ? " selected" : "";
+  String ss60   = (curSleep == 60)   ? " selected" : "";
+  String ss120  = (curSleep == 120)  ? " selected" : "";
+  String ss300  = (curSleep == 300)  ? " selected" : "";
+  String ss600  = (curSleep == 600)  ? " selected" : "";
+  String ss1800 = (curSleep == 1800) ? " selected" : "";
 
   int curGap = Font::currentLineGap();
   String lg0 = (curGap == 0) ? " selected" : "";
@@ -938,12 +939,7 @@ static void handleSettingsPost() {
 
   if (server.hasArg("sleep")) {
     int ss = server.arg("sleep").toInt();
-    if (ss < 10) ss = 10;
-    if (ss > 3600) ss = 3600;
-    if ((uint32_t)ss != g_settings.sleepSecs) {
-      g_settings.sleepSecs = (uint32_t)ss;
-      prefs.putInt("cfg_sleep", ss);
-    }
+    if (ss != Sleep::idleTimeoutSecs()) Sleep::setIdleTimeout(ss);
   }
 
   if (server.hasArg("lgap")) {

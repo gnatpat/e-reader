@@ -11,7 +11,6 @@
 #include "storage/library.h"
 #include "storage/list_items.h"
 #include "storage/page_cache.h"
-#include "storage/settings_store.h"
 #include "ui/font.h"
 #include "ui/reader.h"
 #include "ui/screen.h"
@@ -77,8 +76,8 @@ void setup() {
   }
 
   prefs.begin("ereader", false);
-  loadSettings();
   Font::loadSettings();
+  Sleep::loadSettings();
   loadBooks();
   loadListItems();
   registerWebRoutes();
@@ -110,8 +109,8 @@ void loop() {
   if (ev.any()) markUserActivity();
 
   if (ENABLE_DEEP_SLEEP && g_currentScreen->allowSleep()) {
-    if (userIdleMs() > sleepAfterMs()) {
-      goToSleep();
+    if (userIdleMs() > Sleep::idleTimeoutMs()) {
+      Sleep::enter();
       return;
     }
   }

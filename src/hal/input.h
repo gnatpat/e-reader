@@ -105,5 +105,5 @@ bool maybeRecoverFromIsrOverflow();
 void markUserActivity();
 
 // Milliseconds since the most recent accepted user input. The sleep
-// deadline check in main.cpp compares this against sleepAfterMs().
+// deadline check in main.cpp compares this against Sleep::idleTimeoutMs().
 uint32_t userIdleMs();
