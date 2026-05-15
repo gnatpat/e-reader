@@ -3,7 +3,7 @@
 #include "hal/display.h"            // u8g2 + MAIN_FONT + getMetrics
 #include "storage/page_cache.h"     // offset cache + savePageOffsetCacheForBook
 #include "storage/settings_store.h" // g_settings — fontSize/lineGap for cache stamping
-#include "ui/reader.h"              // g_reader
+#include "ui/reader.h"              // g_bookview
 
 // Measure-width adapter so `paginatePage` can ask the u8g2 instance about
 // rendered widths under the current font.
@@ -41,10 +41,10 @@ uint32_t buildNextOffsetFor(File& f, uint32_t startPos) {
 }
 
 uint32_t buildNextOffset(uint32_t startPos) {
-  uint32_t next = readPageFromFile(g_reader.book.file(), startPos, false, nullptr);
+  uint32_t next = readPageFromFile(g_bookview.book.file(), startPos, false, nullptr);
   // Use file size instead of available() for reliable EOF detection.
   // available() is unreliable after internal seeks inside paginatePage.
-  if (next >= (uint32_t)g_reader.book.size()) g_reader.pages.eofReached = true;
+  if (next >= (uint32_t)g_bookview.book.size()) g_bookview.pages.eofReached = true;
   return next;
 }
 
@@ -71,33 +71,33 @@ uint32_t pageOffsetForPage(File& f, const String& path, int page) {
 }
 
 void ensureOffsetsUpTo(int targetPage) {
-  if (g_reader.pages.count < 1) {
-    g_reader.pages.count = 1;
-    g_reader.pages.offsets[0] = 0;
+  if (g_bookview.pages.count < 1) {
+    g_bookview.pages.count = 1;
+    g_bookview.pages.offsets[0] = 0;
   }
 
   bool addedOffsets = false;
-  while (!g_reader.pages.eofReached && g_reader.pages.count <= targetPage && g_reader.pages.count < MAX_PAGES) {
-    uint32_t start = g_reader.pages.offsets[g_reader.pages.count - 1];
+  while (!g_bookview.pages.eofReached && g_bookview.pages.count <= targetPage && g_bookview.pages.count < MAX_PAGES) {
+    uint32_t start = g_bookview.pages.offsets[g_bookview.pages.count - 1];
     uint32_t next = buildNextOffset(start);
     if (next <= start) {
-      g_reader.pages.eofReached = true;
+      g_bookview.pages.eofReached = true;
       break;
     }
-    g_reader.pages.offsets[g_reader.pages.count] = next;
-    storeOffsetCache(g_reader.book.path(), g_reader.pages.count, next);
-    g_reader.pages.count++;
+    g_bookview.pages.offsets[g_bookview.pages.count] = next;
+    storeOffsetCache(g_bookview.book.path(), g_bookview.pages.count, next);
+    g_bookview.pages.count++;
     addedOffsets = true;
   }
 
-  if (g_reader.cursor.pageIndex >= g_reader.pages.count) g_reader.cursor.pageIndex = g_reader.pages.count - 1;
-  if (g_reader.cursor.pageIndex < 0) g_reader.cursor.pageIndex = 0;
+  if (g_bookview.cursor.pageIndex >= g_bookview.pages.count) g_bookview.cursor.pageIndex = g_bookview.pages.count - 1;
+  if (g_bookview.cursor.pageIndex < 0) g_bookview.cursor.pageIndex = 0;
 
-  if (addedOffsets && (g_reader.pages.count % 50 == 0 || g_reader.pages.eofReached)) {
-    if (g_reader.book.isOpen()) {
-      savePageOffsetCacheForBook(g_reader.book.path(), g_reader.book.size(),
+  if (addedOffsets && (g_bookview.pages.count % 50 == 0 || g_bookview.pages.eofReached)) {
+    if (g_bookview.book.isOpen()) {
+      savePageOffsetCacheForBook(g_bookview.book.path(), g_bookview.book.size(),
                                  g_settings.fontSize, g_settings.lineGap,
-                                 g_reader.pages);
+                                 g_bookview.pages);
     }
   }
 }
@@ -106,18 +106,18 @@ int findPageForOffset(uint32_t targetOffset) {
   // Paginate forward until the last known page starts at or past the target,
   // or we hit EOF / the max page limit. ensureOffsetsUpTo(count) extends by
   // one page each call.
-  while (!g_reader.pages.eofReached
-      && g_reader.pages.count > 0
-      && g_reader.pages.offsets[g_reader.pages.count - 1] < targetOffset
-      && g_reader.pages.count < MAX_PAGES) {
-    int prev = g_reader.pages.count;
+  while (!g_bookview.pages.eofReached
+      && g_bookview.pages.count > 0
+      && g_bookview.pages.offsets[g_bookview.pages.count - 1] < targetOffset
+      && g_bookview.pages.count < MAX_PAGES) {
+    int prev = g_bookview.pages.count;
     ensureOffsetsUpTo(prev);
-    if (g_reader.pages.count == prev) break;   // no progress = give up
+    if (g_bookview.pages.count == prev) break;   // no progress = give up
   }
   // The page containing `targetOffset` is the largest N with
   // offsets[N] <= targetOffset.
-  for (int i = g_reader.pages.count - 1; i >= 0; i--) {
-    if (g_reader.pages.offsets[i] <= targetOffset) return i;
+  for (int i = g_bookview.pages.count - 1; i >= 0; i--) {
+    if (g_bookview.pages.offsets[i] <= targetOffset) return i;
   }
   return 0;
 }

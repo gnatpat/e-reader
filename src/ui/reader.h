@@ -5,13 +5,18 @@
 #include "pure/page_offset_table.h"
 
 // ============================================================================
-//  The active reader session — split into four focused pieces.
+//  The currently open book and where the user is looking at it. Shared
+//  between `ReaderScreen` (active reading session) and
+//  `BookmarkPreviewScreen` (transient view before commit). Both screens
+//  legitimately operate on a `BookView`; only the reader does anything
+//  beyond view (auto-save throttle, idle prefetch, wake arming) — those
+//  live private inside `reader.cpp`.
 //
 //  Strong invariant: a book is "open" iff `book.isOpen()` returns true,
 //  and that's true iff `book.path()` is non-empty. The file handle, path,
 //  and derived NVS key always move as a unit through `OpenBook`'s methods.
 //
-//  Library / upload / web flows fully clear `g_reader` on leaving the
+//  Library / upload / web flows fully clear `g_bookview` on leaving the
 //  reader (see `LibraryScreen::onEnter`), so non-reader code never has to
 //  reason about stale book state.
 // ============================================================================
@@ -47,25 +52,26 @@ struct ReaderCursor {
   int pageTurnsSinceFull = 0;
 };
 
-// Throttle bookkeeping for periodic progress-save to NVS.
-struct SaveThrottle {
-  uint32_t lastSaveMs = 0;
-  int      lastSavedPage = -1;
-};
-
-struct ReaderState {
+struct BookView {
   OpenBook        book;
   PageOffsetTable pages;
   ReaderCursor    cursor;
-  SaveThrottle    save;
 };
 
-extern ReaderState g_reader;
+extern BookView g_bookview;
 
 bool openBookByIndex(int idx);
 void drawStatusBar(uint32_t startOffset);
 void renderCurrentPage();
 void idlePrefetchReader();
+
+// Cursor navigation. Both move the cursor and bump `pageTurnsSinceFull` on
+// a real page change; `advancePage` lazily paginates one ahead and clamps
+// to EOF. Return true iff the cursor actually moved — caller decides what
+// to do on a successful move (reader saves progress + renders; preview
+// just renders).
+bool advancePage();
+bool retreatPage();
 
 // Boot-time wake-resume. Checks if wake state asks us to resume reading and
 // if the book still exists. On success the reader is fully set up for an
@@ -82,20 +88,30 @@ void armResumeOnWake();    // arm: persist currently-open book for resume
 void clearResumeOnWake();  // disarm: next wake lands in library
 
 // ============================================================================
-//  Reader lifecycle — full reset of every piece of `g_reader`. Called when
-//  leaving the reader entirely (library entry, factory reset).
+//  View lifecycle — full reset of every piece of `g_bookview` (and the reader's
+//  private save-throttle state). Called when leaving the reader entirely
+//  (library entry, factory reset).
 // ============================================================================
-void clearCurrentBookState();
+void resetBookView();
 
 // ============================================================================
-//  Progress + bookmark glue — manipulates `g_reader`, persists via storage.
+//  Progress + bookmark glue — manipulates `g_bookview`, persists via storage.
 //  Lives on the ui side of the boundary because the bulk of the logic is
-//  reader-state reasoning (throttle window, "is a book even open right now");
-//  the underlying save is delegated to the pure storage API.
+//  view-state reasoning ("is a book even open right now"); the underlying
+//  save is delegated to the pure storage API. Auto-save throttle bookkeeping
+//  is private to `reader.cpp` — preview never auto-saves, only the reader
+//  does, so there's no caller outside this module that needs to see it.
 // ============================================================================
-void resetSaveThrottle();
-void saveProgressThrottled(bool force = false);
 
-// Add a bookmark at the currently-open reader page. Returns a UI message
+// Persist the current reading position to NVS unconditionally. Used at
+// commit-style moments: reader sleeping, preview committing to a bookmark.
+void saveProgress();
+
+// Persist the current reading position to NVS only if it has actually
+// changed since the last save AND the throttle window has elapsed. Used
+// on every page turn in the reader to bound NVS write rate.
+void saveProgressThrottled();
+
+// Add a bookmark at the currently-open view's page. Returns a UI message
 // (e.g. "Bookmark saved" / "Bookmark exists") or nullptr if no book is open.
 const char* addBookmarkForCurrentBook();

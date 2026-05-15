@@ -60,13 +60,13 @@ int  savedPageForBookPath(const String& path);
 
 // Per-book lifecycle. Compose the pure NVS operations above with the
 // matching page-cache file work in storage/page_cache.h. They do NOT
-// touch device wake state or `g_reader` — those are higher-level
+// touch device wake state or `g_bookview` — those are higher-level
 // concerns and callers run in contexts (web during upload) where the
 // reader has already been fully cleared by `LibraryScreen::onEnter`.
 void deleteBookMetadata(const String& path);
 void migrateBookMetadata(const String& oldPath, const String& newPath);
 
 // Throttled-save and bookmark-current-page helpers live in ui/reader.h —
-// they manipulate g_reader and belong on the ui side of the storage boundary.
+// they manipulate g_bookview and belong on the ui side of the storage boundary.
 
 #endif  // ARDUINO

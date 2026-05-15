@@ -291,7 +291,7 @@ static void handleDelete() {
     return;
   }
 
-  // Library entry already cleared g_reader; no book is "current" here.
+  // Library entry already cleared g_bookview; no book is "current" here.
   String path = String(g_library.books[id].path);
   if (FS.exists(path)) FS.remove(path);
   deleteBookMetadata(path);
@@ -392,7 +392,7 @@ static void handleMoveBook() {
     return;
   }
 
-  // Library entry already cleared g_reader; no book is "current" here.
+  // Library entry already cleared g_bookview; no book is "current" here.
   if (!FS.rename(oldPath, newPath)) {
     server.send(500, "text/plain; charset=utf-8", "move failed");
     return;
@@ -422,7 +422,7 @@ static void handleJumpPageWeb() {
   if (page < 1) page = 1;
   int zeroBasedPage = page - 1;
 
-  // Library entry already cleared g_reader. We write both the page number
+  // Library entry already cleared g_bookview. We write both the page number
   // (display hint) and the byte offset (canonical position used by the
   // reader on next open). Computing the offset requires paginating the
   // book at the current font — file open + page walk. Same cost as the
@@ -708,7 +708,7 @@ static void handleExportBookmarksWeb() {
 }
 
 static void doFactoryReset() {
-  // g_reader was cleared on library entry (which we passed through to get
+  // g_bookview was cleared on library entry (which we passed through to get
   // to upload mode, where this handler is served). The remaining helpers
   // wipe ambient ui/library state — wake state and the rest of NVS are
   // nuked by prefs.clear() below.

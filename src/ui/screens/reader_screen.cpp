@@ -24,31 +24,22 @@ void ReaderScreen::onButton(const ButtonEvent& e) {
   if (e.kind == ButtonEvent::Long) {
     const char* msg = addBookmarkForCurrentBook();
     if (msg) showToast(msg);
-    g_reader.cursor.pageTurnsSinceFull++;
+    g_bookview.cursor.pageTurnsSinceFull++;
     renderCurrentPage();
     return;
   }
 
   if (e.kind == ButtonEvent::Double) {
-    if (g_reader.cursor.pageIndex > 0) {
-      g_reader.cursor.pageIndex--;
-      saveProgressThrottled(false);
-      g_reader.cursor.pageTurnsSinceFull++;
+    if (retreatPage()) {
+      saveProgressThrottled();
       renderCurrentPage();
     }
     return;
   }
 
   if (e.kind == ButtonEvent::Short) {
-    int oldPage = g_reader.cursor.pageIndex;
-    g_reader.cursor.pageIndex++;
-    ensureOffsetsUpTo(g_reader.cursor.pageIndex);
-    if (g_reader.pages.eofReached && g_reader.cursor.pageIndex >= g_reader.pages.count)
-      g_reader.cursor.pageIndex = g_reader.pages.count - 1;
-    if (g_reader.cursor.pageIndex < 0) g_reader.cursor.pageIndex = 0;
-    if (g_reader.cursor.pageIndex != oldPage) {
-      saveProgressThrottled(false);
-      g_reader.cursor.pageTurnsSinceFull++;
+    if (advancePage()) {
+      saveProgressThrottled();
       renderCurrentPage();
     }
     return;
@@ -61,10 +52,10 @@ void ReaderScreen::onIdleTick() {
 
 void ReaderScreen::onSleep() {
   // Strong invariant: reader screen is never active without an open book.
-  saveProgressThrottled(true);
-  savePageOffsetCacheForBook(g_reader.book.path(), g_reader.book.size(),
+  saveProgress();
+  savePageOffsetCacheForBook(g_bookview.book.path(), g_bookview.book.size(),
                              g_settings.fontSize, g_settings.lineGap,
-                             g_reader.pages);
+                             g_bookview.pages);
   armResumeOnWake();
-  g_reader.book.close();   // release LittleFS handle before deep sleep
+  g_bookview.book.close();   // release LittleFS handle before deep sleep
 }

@@ -87,9 +87,9 @@ void BookmarkListScreen::onButton(const ButtonEvent& e) {
       if (off == 0xFFFFFFFFUL) {
         int storedPage = (int)g_bookmarkSession.pages[g_bookmarkSession.selectedIndex];
         if (storedPage < 0) storedPage = 0;
-        g_reader.cursor.pageIndex = storedPage;
+        g_bookview.cursor.pageIndex = storedPage;
       } else {
-        g_reader.cursor.pageIndex = findPageForOffset(off);
+        g_bookview.cursor.pageIndex = findPageForOffset(off);
       }
       nextScreen = &g_bmPreviewScreen;
     } else {

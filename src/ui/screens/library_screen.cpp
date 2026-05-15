@@ -133,7 +133,7 @@ void LibraryScreen::onEnter() {
   // downstream code never has to reason about stale reader state. Wake
   // state doesn't need clearing — it's consumed at boot, so it's already
   // empty during runtime unless the reader has explicitly armed it.
-  clearCurrentBookState();
+  resetBookView();
   resetBookmarkSession();
 
   // Reset the cursor but preserve folder expansion across visits — user
