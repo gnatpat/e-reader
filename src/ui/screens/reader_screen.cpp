@@ -2,10 +2,11 @@
 
 #include "hal/display.h"
 #include "storage/page_cache.h"
-#include "storage/settings_store.h"  // g_settings — fontSize/lineGap for cache stamping
+#include "ui/font.h"  // currentBodySize/currentLineGap for cache stamping
 #include "ui/reader.h"
 #include "ui/screens/library_screen.h"
 #include "ui/text.h"
+#include "ui/toast.h"  // showToast for bookmark-saved feedback
 
 void ReaderScreen::onEnter() {
   draw();
@@ -54,7 +55,7 @@ void ReaderScreen::onSleep() {
   // Strong invariant: reader screen is never active without an open book.
   saveProgress();
   savePageOffsetCacheForBook(g_bookview.book.path(), g_bookview.book.size(),
-                             g_settings.fontSize, g_settings.lineGap,
+                             Font::currentBodySize(), Font::currentLineGap(),
                              g_bookview.pages);
   armResumeOnWake();        // captures path before resetBookView() drops it
   resetBookView();

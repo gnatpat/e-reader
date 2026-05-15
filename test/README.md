@@ -44,7 +44,6 @@ Or run the binary directly for the verbose per-test output:
 | [`test_bookmark_label.cpp`](test_bookmark_label.cpp) | first-words bookmark label |
 | [`test_bookmarks_codec.cpp`](test_bookmarks_codec.cpp) | bookmark byte-blob encode/decode + v1 migration |
 | [`test_list_codec.cpp`](test_list_codec.cpp) | todo-list byte-blob encode/decode |
-| [`test_offset_cache.cpp`](test_offset_cache.cpp) | LRU page-offset cache |
 | [`test_bookmarks_store.cpp`](test_bookmarks_store.cpp) | `loadBookmarks` / `saveBookmarks` against `MapKvStore` |
 | [`test_list_store.cpp`](test_list_store.cpp) | `loadList` / `saveList` against `MapKvStore` |
 

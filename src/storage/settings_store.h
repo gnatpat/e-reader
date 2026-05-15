@@ -12,9 +12,7 @@ enum ReaderLongPressAction {
 };
 
 struct RuntimeSettings {
-  int fontSize = 8;
   uint32_t sleepSecs = 120;
-  int lineGap = 0;
   int readerLongPressAction = LONGPRESS_BOOKMARK;
 };
 
@@ -27,7 +25,6 @@ inline uint32_t sleepAfterMs() {
 }
 
 // Load persisted settings into `g_settings`, clamping out-of-range values.
-// Pure storage read — does NOT touch the display. After calling this,
-// callers must invoke `applyFontSize(g_settings.fontSize)` (in hal/display.h)
-// to push the loaded font choice into the global font pointers + metrics.
+// Body font + line gap are owned by the Font module — see Font::loadSettings()
+// in ui/font.h, which the boot sequence calls separately.
 void loadSettings();

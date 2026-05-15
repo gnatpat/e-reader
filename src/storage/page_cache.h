@@ -5,39 +5,43 @@
 #include "pure/page_offset_table.h"
 
 // ============================================================================
-//  In-RAM offset cache wrappers (path-based). Backed by a private OffsetCache
-//  instance inside page_cache.cpp. The wrappers hash the path internally so
-//  callers can keep using string paths.
-// ============================================================================
-void resetOffsetCache();
-bool lookupOffsetCache(const String& path, int targetPage,
-                       int& cachedPage, uint32_t& cachedOffset);
-void storeOffsetCache(const String& path, int page, uint32_t offset);
-
-// ============================================================================
 //  On-disk page-offset cache (pc_<hash>.bin files in LittleFS root)
 //
-//  Files are layout-stamped: the saved header includes a `layoutVersion`
-//  derived from font size + line gap, and load rejects mismatched files.
-//  No external "invalidate everything" pass is needed on font change —
-//  stale files are silently ignored on load and overwritten on next save.
+//  Per-book binary file mapping page index -> byte offset, stamped with the
+//  layout (font size + line gap) under which the offsets were computed.
+//  Load rejects mismatched files; stale entries are silently overwritten on
+//  the next save. No external "invalidate everything" pass needed on font or
+//  file change — layout-correctness is a property of the file format itself.
+//
+//  The active reader bulk-loads the whole table into `g_bookview.pages` via
+//  `loadPageOffsetCacheForBook`. Cross-book lookups (web bookmark resolve,
+//  page-text export) use the lighter `loadOffsetForPageFromDisk` to read
+//  one entry without allocating a 40 KB scratch table.
 // ============================================================================
-String pageCachePathForBook(const String& path);
 
-// Load the persisted offset table for `path` into `out`. The cache file
-// is layout-stamped at save time; load rejects any file whose stamp
-// doesn't match `(fontSize, lineGap)`. Returns true on success (magic +
-// layout + size check all passed); on false, `out` is left untouched
-// (callers typically seed it with offsets[0]=0, count=1 themselves).
+// Bulk-load the persisted offset table for `path` into `out`. Layout-stamped
+// at save time; load rejects any file whose stamp doesn't match
+// `(bodySize, lineGap)`. Returns true on success; on false, `out` is left
+// untouched (callers typically seed `offsets[0]=0, count=1` themselves).
 bool loadPageOffsetCacheForBook(const String& path, size_t expectedSize,
-                                int fontSize, int lineGap,
+                                int bodySize, int lineGap,
                                 PageOffsetTable& out);
 
-// Persist `in` for `path`, stamped with `(fontSize, lineGap)`. No-op if
+// Persist `in` for `path`, stamped with `(bodySize, lineGap)`. No-op if
 // `in.count <= 1` (nothing useful to save).
 void savePageOffsetCacheForBook(const String& path, size_t fileSize,
-                                int fontSize, int lineGap,
+                                int bodySize, int lineGap,
                                 const PageOffsetTable& in);
+
+// Single-entry on-disk lookup: read header, validate magic + layout +
+// expected file size, and return the offset of the largest cached page
+// `<= maxPage` along with that page's index. Constant-RAM (no PageOffsetTable
+// scratch); two short reads (header + one offset). Returns -1 (and leaves
+// `*out` untouched) if the cache file is absent, stamped for a different
+// layout, sized for a different file, or has zero entries.
+int loadOffsetForPageFromDisk(const String& path, size_t expectedSize,
+                              int bodySize, int lineGap,
+                              int maxPage, uint32_t* out);
 
 // Remove the on-disk page-cache file for `path` (no-op if absent).
 void deletePageCacheForBook(const String& path);

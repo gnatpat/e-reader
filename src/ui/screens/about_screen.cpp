@@ -1,7 +1,7 @@
 #include "ui/screens/about_screen.h"
 
 #include "hal/display.h"
-#include "storage/settings_store.h"  // g_settings.lineGap
+#include "ui/font.h"
 #include "ui/screens/library_screen.h"
 #include "ui/widgets.h"
 
@@ -11,9 +11,9 @@ void AboutScreen::onEnter() {
 
 void AboutScreen::draw() {
   prepareMenuFrame();
-  u8g2.setFont(MAIN_FONT);
+  Font::useBody();
   int ascent = u8g2.getFontAscent();
-  int lineH = (ascent - u8g2.getFontDescent()) + g_settings.lineGap + 1;
+  int lineH = (ascent - u8g2.getFontDescent()) + Font::currentLineGap() + 1;
   int y = drawSectionHeader("Device");
 
   String rows[5] = {
@@ -25,7 +25,8 @@ void AboutScreen::draw() {
   };
 
   for (int i = 0; i < 5; i++) {
-    u8g2.setFont(i == 0 ? BOLD_FONT : MAIN_FONT);
+    if (i == 0) Font::useBold();
+    else        Font::useBody();
     u8g2.setCursor(MARGIN_X, y);
     u8g2.print(rows[i].c_str());
     y += lineH;

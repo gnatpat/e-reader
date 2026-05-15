@@ -6,10 +6,12 @@
 #include "storage/library.h"   // g_library — openBookByIndex reads it
 #include "storage/page_cache.h"
 #include "storage/preferences_store.h"
-#include "storage/settings_store.h"  // g_settings — fontSize/lineGap for cache stamping
 
+#include "ui/font.h"                    // currentBodySize/currentLineGap for cache stamping
 #include "ui/screens/library_screen.h"  // navigateToLibraryRoot — fallback on error
 #include "ui/text.h"
+#include "ui/toast.h"                   // g_toast + drawToastIfActive
+#include "ui/widgets.h"                 // drawCenter (error fallback)
 
 // The currently open book and where the user is looking. Produced by
 // `openBookByIndex()` below, fully torn down by `resetBookView()` on leaving
@@ -78,7 +80,7 @@ bool openBookByIndex(int idx) {
   g_bookview.pages.offsets[0] = 0;
   g_bookview.pages.eofReached = false;
   loadPageOffsetCacheForBook(path, g_bookview.book.size(),
-                             g_settings.fontSize, g_settings.lineGap,
+                             Font::currentBodySize(), Font::currentLineGap(),
                              g_bookview.pages);
 
   // Resolve the reading position. The byte offset (`_off`) is canonical and
@@ -97,8 +99,6 @@ bool openBookByIndex(int idx) {
   g_bookview.cursor.pageTurnsSinceFull = 0;
   resetSaveThrottle();
 
-  storeOffsetCache(path, 0, 0);
-
   int warmTarget = g_bookview.cursor.pageIndex + PREFETCH_AHEAD_PAGES;
   if (warmTarget < 1) warmTarget = 1;
   ensureOffsetsUpTo(warmTarget);
@@ -111,13 +111,13 @@ static void drawStatusBar(uint32_t startOffset) {
 
   int pageTextW = 0;
   if (SHOW_PAGE_NUMBER) {
-    u8g2.setFont(PAGE_FONT);
+    Font::useUiTiny();
     char buf[20];
     snprintf(buf, sizeof(buf), "%d", g_bookview.cursor.pageIndex + 1);
     pageTextW = u8g2.getUTF8Width(buf);
     u8g2.setCursor(SCREEN_W - MARGIN_X - pageTextW, SCREEN_H - 1);
     u8g2.print(buf);
-    u8g2.setFont(MAIN_FONT);
+    Font::useBody();
   }
 
   if (SHOW_PROGRESS_BAR) {
@@ -185,7 +185,7 @@ void renderCurrentPage() {
   }
 
   beginPageCanvas();
-  u8g2.setFont(MAIN_FONT);
+  Font::useBody();
 
   uint32_t nextOff = readPageFromFile(g_bookview.book.file(), start, true, nullptr);
   (void)nextOff;
@@ -306,7 +306,7 @@ const char* addBookmarkForCurrentBook() {
   if (r.added) {
     saveBookmarks(kv, g_bookview.book.key(), bm);
     savePageOffsetCacheForBook(g_bookview.book.path(), g_bookview.book.size(),
-                               g_settings.fontSize, g_settings.lineGap,
+                               Font::currentBodySize(), Font::currentLineGap(),
                                g_bookview.pages);
   }
   return r.message;

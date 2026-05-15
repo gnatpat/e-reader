@@ -3,7 +3,6 @@
 #include "pure/paths.h"
 #include "state.h"                   // FS macro
 #include "storage/fs_util.h"         // ensureBooksDir
-#include "storage/page_cache.h"      // resetOffsetCache
 
 // The library catalog. Populated by `loadBooks()` from on-disk `/books/**`.
 // Navigation state (cursor, folder expansion, derived entry list) lives on
@@ -88,7 +87,6 @@ static void scanBooksRecursive(const String& absDir, const String& relDir) {
 void loadBooks() {
   g_library.bookCount = 0;
   g_library.folderCount = 0;
-  resetOffsetCache();
 
   ensureBooksDir();
   scanBooksRecursive("/books", "");

@@ -6,6 +6,7 @@
 
 #include "hal/display.h"
 #include "storage/library.h"
+#include "ui/font.h"
 #include "ui/screens/library_screen.h"
 #include "ui/widgets.h"
 
@@ -38,32 +39,32 @@ void UploadScreen::startSession() {
 
   int y = drawSectionHeader("Upload");
 
-  u8g2.setFont(BOLD_FONT);
+  Font::useBold();
   u8g2.setCursor(MARGIN_X, y);
   u8g2.print("Wi-Fi");
   y += 14;
 
-  u8g2.setFont(MAIN_FONT);
+  Font::useBody();
   u8g2.setCursor(MARGIN_X, y);
   u8g2.print(AP_SSID);
   y += 16;
 
-  u8g2.setFont(BOLD_FONT);
+  Font::useBold();
   u8g2.setCursor(MARGIN_X, y);
   u8g2.print("Password");
   y += 14;
 
-  u8g2.setFont(MAIN_FONT);
+  Font::useBody();
   u8g2.setCursor(MARGIN_X, y);
   u8g2.print(AP_PASS);
   y += 16;
 
-  u8g2.setFont(BOLD_FONT);
+  Font::useBold();
   u8g2.setCursor(MARGIN_X, y);
   u8g2.print("Open");
   y += 14;
 
-  u8g2.setFont(MAIN_FONT);
+  Font::useBody();
   u8g2.setCursor(MARGIN_X, y);
   u8g2.print(url.c_str());
   y += 18;

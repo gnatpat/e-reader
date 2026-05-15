@@ -18,8 +18,10 @@
 #include "ui/screens/library_screen.h"
 #include "ui/screens/list_screen.h"
 #include "ui/screens/reader_screen.h"
+#include "ui/font.h"
 #include "ui/screens/upload_screen.h"  // owns the singleton upload session state
 #include "ui/text.h"
+#include "ui/toast.h"
 
 // ============================================================================
 //  Web UI helpers
@@ -295,7 +297,6 @@ static void handleDelete() {
   String path = String(g_library.books[id].path);
   if (FS.exists(path)) FS.remove(path);
   deleteBookMetadata(path);
-  resetOffsetCache();
 
   server.sendHeader("Location", "/files");
   server.send(302, "text/plain", "");
@@ -399,7 +400,6 @@ static void handleMoveBook() {
   }
 
   migrateBookMetadata(oldPath, newPath);   // NVS keys + page-cache file
-  resetOffsetCache();
 
   server.sendHeader("Location", "/files");
   server.send(302, "text/plain", "");
@@ -722,7 +722,6 @@ static void doFactoryReset() {
   delay(200);
   if (!FS.begin(true)) return;
   ensureBooksDir();
-  resetOffsetCache();
   loadBooks();
 }
 
@@ -839,10 +838,11 @@ static void handleListClearDoneWeb() {
 }
 
 static void handleSettings() {
-  String sel8 = (g_settings.fontSize == 8) ? " selected" : "";
-  String sel10 = (g_settings.fontSize == 10) ? " selected" : "";
-  String sel12 = (g_settings.fontSize == 12) ? " selected" : "";
-  String sel14 = (g_settings.fontSize == 14) ? " selected" : "";
+  int curFont = Font::currentBodySize();
+  String sel8  = (curFont == 8)  ? " selected" : "";
+  String sel10 = (curFont == 10) ? " selected" : "";
+  String sel12 = (curFont == 12) ? " selected" : "";
+  String sel14 = (curFont == 14) ? " selected" : "";
 
   String ss30 = (g_settings.sleepSecs == 30) ? " selected" : "";
   String ss60 = (g_settings.sleepSecs == 60) ? " selected" : "";
@@ -851,10 +851,11 @@ static void handleSettings() {
   String ss600 = (g_settings.sleepSecs == 600) ? " selected" : "";
   String ss1800 = (g_settings.sleepSecs == 1800) ? " selected" : "";
 
-  String lg0 = (g_settings.lineGap == 0) ? " selected" : "";
-  String lg1 = (g_settings.lineGap == 1) ? " selected" : "";
-  String lg2 = (g_settings.lineGap == 2) ? " selected" : "";
-  String lg3 = (g_settings.lineGap == 3) ? " selected" : "";
+  int curGap = Font::currentLineGap();
+  String lg0 = (curGap == 0) ? " selected" : "";
+  String lg1 = (curGap == 1) ? " selected" : "";
+  String lg2 = (curGap == 2) ? " selected" : "";
+  String lg3 = (curGap == 3) ? " selected" : "";
 
   bool hasSleepImg = FS.exists("/sleep.bin");
 
@@ -929,16 +930,10 @@ static void handleSettings() {
 }
 
 static void handleSettingsPost() {
-  bool layoutChanged = false;
-
   if (server.hasArg("font")) {
     int fs = server.arg("font").toInt();
     if (fs != 8 && fs != 10 && fs != 12 && fs != 14) fs = 10;
-    if (fs != g_settings.fontSize) {
-      applyFontSize(fs);
-      prefs.putInt("cfg_font", fs);
-      layoutChanged = true;
-    }
+    if (fs != Font::currentBodySize()) Font::setBodySize(fs);
   }
 
   if (server.hasArg("sleep")) {
@@ -955,21 +950,11 @@ static void handleSettingsPost() {
     int lg = server.arg("lgap").toInt();
     if (lg < 0) lg = 0;
     if (lg > 4) lg = 4;
-    if (lg != g_settings.lineGap) {
-      g_settings.lineGap = lg;
-      prefs.putInt("cfg_lgap", lg);
-      invalidateMetrics();
-      layoutChanged = true;
-    }
+    if (lg != Font::currentLineGap()) Font::setLineGap(lg);
   }
 
-  if (layoutChanged) {
-    // The on-disk page caches are layout-stamped and self-invalidate on
-    // load, so nothing on disk needs touching here. The in-memory LRU
-    // does — its (page, offset) entries were keyed by page numbers under
-    // the old layout, and those page numbers don't carry over.
-    resetOffsetCache();
-  }
+  // On-disk page caches are layout-stamped and self-invalidate on load, so
+  // a font/lineGap change needs no cross-cutting cleanup here.
 
   server.sendHeader("Location", "/settings");
   server.send(302, "text/plain", "");

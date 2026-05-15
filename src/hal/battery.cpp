@@ -1,6 +1,7 @@
 #include "hal/battery.h"
 
-#include "hal/display.h" // u8g2 + gfx + MAIN_FONT for the battery icon
+#include "hal/display.h" // u8g2 + gfx for the battery icon
+#include "ui/font.h"     // role-based font switch (UiSmall for the % text)
 
 #if HAS_BATTERY
 
@@ -159,14 +160,14 @@ void drawBatteryTopRight() {
   if (fillW > 0) gfx.fillRect(xIcon + 1, yIcon + 1, fillW, iconH - 2, 1);
   if (s_battery.low && pct > 0) gfx.drawLine(xIcon + 3, yIcon + 2, xIcon + 3, yIcon + iconH - 3, 0);
 
-  u8g2.setFont(u8g2_font_6x10_tf);
+  Font::useUiSmall();
   char buf[8];
   if (s_battery.valid) snprintf(buf, sizeof(buf), "%d%%", pct);
   else snprintf(buf, sizeof(buf), "--");
   int wTxt = u8g2.getUTF8Width(buf);
   u8g2.setCursor(xIcon - 4 - wTxt, yIcon + 8);
   u8g2.print(buf);
-  u8g2.setFont(MAIN_FONT);
+  Font::useBody();
 }
 
 #endif

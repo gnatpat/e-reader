@@ -21,7 +21,6 @@ set(SUT_SRC
   ${CMAKE_SOURCE_DIR}/../src/pure/bookmark_label.cpp
   ${CMAKE_SOURCE_DIR}/../src/pure/bookmarks_codec.cpp
   ${CMAKE_SOURCE_DIR}/../src/pure/list_codec.cpp
-  ${CMAKE_SOURCE_DIR}/../src/pure/offset_cache.cpp
   ${CMAKE_SOURCE_DIR}/../src/storage/book_metadata.cpp
   ${CMAKE_SOURCE_DIR}/../src/storage/list_items.cpp
 )
@@ -36,7 +35,6 @@ set(TEST_SRC
   ${CMAKE_CURRENT_SOURCE_DIR}/test_bookmark_label.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/test_bookmarks_codec.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/test_list_codec.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/test_offset_cache.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/test_bookmarks_store.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/test_list_store.cpp
 )

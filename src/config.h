@@ -4,9 +4,8 @@
 //  Project-wide compile-time configuration.
 //
 //  IMPORTANT: This header is included transitively by the pure/ modules
-//  (paginator, list_codec, bookmarks_codec, offset_cache, etc.), which are
-//  also compiled into the host-test build. It MUST therefore remain
-//  host-compatible:
+//  (paginator, list_codec, bookmarks_codec, etc.), which are also compiled
+//  into the host-test build. It MUST therefore remain host-compatible:
 //
 //    - No <Arduino.h>, <WiFi.h>, or any library header.
 //    - No code, only `#define`s, `static const` constants, type aliases,
@@ -31,7 +30,6 @@ static const int MAX_FOLDERS = 32;
 static const int MAX_FOLDER_PATH = 63;  // chars, excluding null
 static const int MAX_PAGES = 10000;
 static const int MAX_LIBRARY_ENTRIES = (MAX_BOOKS * 2) + (MAX_FOLDERS * 2) + 8;
-static const int OFFSET_CACHE_SIZE = 96;
 static const int MAX_LIST_ITEMS = 16;
 static const int MAX_LIST_TEXT = 64;
 
@@ -77,7 +75,6 @@ static const bool ENABLE_DEEP_SLEEP = true;
 // NOTE: `#define FS LittleFS` lives in state.h AFTER all system headers, so it
 // doesn't collide with the `class FS` declared inside Arduino's FS.h.
 
-// Fonts: PAGE_FONT is fixed; MAIN/BOLD switch with the user-selected font size.
-extern const uint8_t* PAGE_FONT;
-extern const uint8_t* MAIN_FONT;
-extern const uint8_t* BOLD_FONT;
+// Fonts live behind the role API in `ui/font.h` (Font::useBody/useBold/
+// useUiSmall/useUiTiny). No code outside font.cpp references u8g2 font
+// tables directly.

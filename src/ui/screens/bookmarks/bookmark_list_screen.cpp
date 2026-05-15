@@ -4,6 +4,7 @@
 #include "pure/hashing.h"
 #include "storage/book_metadata.h"
 #include "storage/library.h"         // g_library
+#include "ui/font.h"
 #include "ui/reader.h"
 #include "ui/screens/bookmarks/book_select_screen.h"
 #include "ui/screens/bookmarks/preview_screen.h"
@@ -18,7 +19,7 @@ void BookmarkListScreen::onEnter() {
 
 void BookmarkListScreen::draw() {
   prepareMenuFrame();
-  u8g2.setFont(MAIN_FONT);
+  Font::useBody();
   int y = drawSectionHeader("Bookmarks");
 
   String bookPath = String(g_library.books[g_bookmarkSession.bookIndex].path);

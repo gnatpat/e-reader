@@ -2,6 +2,7 @@
 
 #include "hal/display.h"
 #include "storage/library.h"         // g_library
+#include "ui/font.h"
 #include "ui/screens/bookmarks/bookmark_list_screen.h"
 #include "ui/screens/bookmarks/session.h"
 #include "ui/screens/library_screen.h"
@@ -13,7 +14,7 @@ void BookmarkBookSelectScreen::onEnter() {
 
 void BookmarkBookSelectScreen::draw() {
   prepareMenuFrame();
-  u8g2.setFont(MAIN_FONT);
+  Font::useBody();
   int y = drawSectionHeader("Bookmarks");
 
   if (g_library.bookCount == 0) {

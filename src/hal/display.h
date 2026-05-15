@@ -31,33 +31,11 @@ extern HeltecGFXAdapter gfx;
 extern U8G2_FOR_ADAFRUIT_GFX u8g2;
 
 // ============================================================================
-//  Fonts / metrics
-// ============================================================================
-void invalidateMetrics();
-const LayoutMetrics& getMetrics();
-void applyFontSize(int sz);
-
-// ============================================================================
 //  Drawing primitives
 // ============================================================================
+
+// Set up the device for any drawing pass: clear the offscreen buffer (unless
+// the caller has already managed that) and put u8g2 into the project's
+// transparent-foreground mode. Higher-level helpers (drawCenter,
+// prepareMenuFrame in ui/widgets.h) call this internally.
 void beginPageCanvas(bool clearMem = true);
-void prepareMenuFrame();
-void drawCenter(const char* a, const char* b = nullptr);
-
-// ============================================================================
-//  Toast (transient bottom-of-screen status message)
-//
-//  showToast() writes msg + sets an expiry; drawToastIfActive() reads it
-//  during the next render and clears it once expired. The reader checks
-//  `g_toast.untilMs` to decide between overlaying the toast and drawing the
-//  normal status bar.
-// ============================================================================
-struct ToastState {
-  String msg;
-  uint32_t untilMs = 0;
-};
-extern ToastState g_toast;
-
-void showToast(const String& msg);
-void drawToastIfActive();
-void resetUiEphemeralState();   // clears any pending toast

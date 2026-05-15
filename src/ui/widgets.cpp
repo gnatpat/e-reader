@@ -2,13 +2,53 @@
 
 #include "hal/battery.h"
 #include "hal/display.h"
-#include "storage/settings_store.h"  // g_settings.lineGap
+#include "ui/font.h"
 
 static const int UI_HEADER_TOP = 6;
 static const int UI_HEADER_GAP = 6;
 
+// Counter that drives the periodic full refresh of menu screens (clears
+// e-ink ghosting). File-private; nothing outside `prepareMenuFrame` reads it.
+static int s_menuDrawsSinceFull = 0;
+
+void prepareMenuFrame() {
+  bool doFull = (s_menuDrawsSinceFull >= MENU_FULL_REFRESH_EVERY);
+  if (doFull) {
+    display.fastmodeOff();
+    display.clear();
+    s_menuDrawsSinceFull = 0;
+  } else {
+    display.fastmodeOn();
+  }
+  beginPageCanvas();
+  s_menuDrawsSinceFull++;
+}
+
+void drawCenter(const char* a, const char* b) {
+  display.fastmodeOff();
+  display.clear();
+  beginPageCanvas();
+  Font::useBody();
+
+  const int lineH = 16;
+  int y = (SCREEN_H / 2) - lineH / 2;
+  if (b) y -= lineH / 2;
+
+  int wA = u8g2.getUTF8Width(a);
+  u8g2.setCursor((SCREEN_W - wA) / 2, y);
+  u8g2.print(a);
+
+  if (b) {
+    y += lineH;
+    int wB = u8g2.getUTF8Width(b);
+    u8g2.setCursor((SCREEN_W - wB) / 2, y);
+    u8g2.print(b);
+  }
+  display.update();
+}
+
 int drawSectionHeader(const char* title) {
-  u8g2.setFont(BOLD_FONT);
+  Font::useBold();
   int ascent = u8g2.getFontAscent();
   int yTitle = UI_HEADER_TOP + ascent - 2;
 
@@ -24,22 +64,23 @@ int drawSectionHeader(const char* title) {
 
   int contentTop = lineY + UI_HEADER_GAP + 11;
 
-  u8g2.setFont(MAIN_FONT);
+  Font::useBody();
   return contentTop;
 }
 
 void drawMenuRow(int yBaseline, const String& label, bool selected, int extraIndent) {
   u8g2.setForegroundColor(1);
-  u8g2.setFont(selected ? BOLD_FONT : MAIN_FONT);
+  if (selected) Font::useBold();
+  else          Font::useBody();
   u8g2.setCursor(UI_LIST_LEFT + extraIndent, yBaseline);
   u8g2.print(label.c_str());
-  u8g2.setFont(MAIN_FONT);
+  Font::useBody();
 }
 
 int menuLineH() {
   int ascent = u8g2.getFontAscent();
   int descent = u8g2.getFontDescent();
-  return (ascent - descent) + g_settings.lineGap + 1;
+  return (ascent - descent) + Font::currentLineGap() + 1;
 }
 
 void drawScrollableList(int contentTopY, int itemCount, int selectedIndex,

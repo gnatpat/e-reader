@@ -1,9 +1,9 @@
 #include "ui/text.h"
 
-#include "hal/display.h"            // u8g2 + MAIN_FONT + getMetrics
+#include "hal/display.h"            // u8g2
 #include "pure/bookmarks_codec.h"   // kOffsetUnset
-#include "storage/page_cache.h"     // offset cache + savePageOffsetCacheForBook
-#include "storage/settings_store.h" // g_settings — fontSize/lineGap for cache stamping
+#include "storage/page_cache.h"     // on-disk page-offset cache
+#include "ui/font.h"                // Font::useBody/bodyLayout/currentBodySize/currentLineGap
 #include "ui/reader.h"              // g_bookview
 
 // Measure-width adapter so `paginatePage` can ask the u8g2 instance about
@@ -14,8 +14,8 @@ static int u8g2Measure(const char* s) {
 
 uint32_t readPageFromFile(File& f, uint32_t startPos, bool draw, String* outText) {
   FileReadStream stream(f);
-  const LayoutMetrics& m = getMetrics();
-  u8g2.setFont(MAIN_FONT);
+  const LayoutMetrics& m = Font::bodyLayout();
+  Font::useBody();
 
   int cursorY = TOP_PAD + m.ascent;
   auto onLine = [&](const char* buf, size_t len) {
@@ -52,22 +52,20 @@ uint32_t buildNextOffset(uint32_t startPos) {
 uint32_t pageOffsetForPage(File& f, const String& path, int page) {
   if (page < 0) page = 0;
 
-  int cachedPage = 0;
-  uint32_t cachedOffset = 0;
-  if (!lookupOffsetCache(path, page, cachedPage, cachedOffset)) {
-    cachedPage = 0;
-    cachedOffset = 0;
-  }
+  // On-disk fast path: O(1) seek to the highest cached page <= target.
+  // The active reader path keeps this file fresh for the books it visits;
+  // cross-book lookups (web bookmark resolve, page-text export) ride along.
+  uint32_t off = 0;
+  int startPage = loadOffsetForPageFromDisk(path, f.size(),
+                                            Font::currentBodySize(), Font::currentLineGap(),
+                                            page, &off);
+  if (startPage < 0) startPage = 0;
 
-  uint32_t off = cachedOffset;
-  for (int p = cachedPage; p < page; p++) {
+  for (int p = startPage; p < page; p++) {
     uint32_t next = buildNextOffsetFor(f, off);
     if (next == off) break;
     off = next;
-    storeOffsetCache(path, p + 1, off);
   }
-
-  storeOffsetCache(path, page, off);
   return off;
 }
 
@@ -86,7 +84,6 @@ void ensureOffsetsUpTo(int targetPage) {
       break;
     }
     g_bookview.pages.offsets[g_bookview.pages.count] = next;
-    storeOffsetCache(g_bookview.book.path(), g_bookview.pages.count, next);
     g_bookview.pages.count++;
     addedOffsets = true;
   }
@@ -97,7 +94,7 @@ void ensureOffsetsUpTo(int targetPage) {
   if (addedOffsets && (g_bookview.pages.count % 50 == 0 || g_bookview.pages.eofReached)) {
     if (g_bookview.book.isOpen()) {
       savePageOffsetCacheForBook(g_bookview.book.path(), g_bookview.book.size(),
-                                 g_settings.fontSize, g_settings.lineGap,
+                                 Font::currentBodySize(), Font::currentLineGap(),
                                  g_bookview.pages);
     }
   }
@@ -129,7 +126,6 @@ uint32_t resolveBookmarkOffset(const String& path, uint16_t page, uint32_t store
 
   size_t size = f.size();
   if (storedOffset != kOffsetUnset && storedOffset < size) {
-    storeOffsetCache(path, page, storedOffset);
     f.close();
     return storedOffset;
   }

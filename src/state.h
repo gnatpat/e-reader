@@ -8,7 +8,6 @@
 
 #include "config.h"
 #include "pure/paginator.h"     // LayoutMetrics
-#include "pure/offset_cache.h"  // OffsetCache
 
 // Use LittleFS as the project's filesystem. Defined AFTER FS.h has declared
 // `class FS`, so the macro doesn't collide with that class name.

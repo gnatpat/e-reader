@@ -10,9 +10,19 @@
 // ============================================================================
 int drawSectionHeader(const char* title);
 
+// Full-screen single- or two-line centered message. Always full-refreshes
+// (no fastmode), so use it sparingly — for hard errors or status notices
+// the user should notice. `b` is optional second line.
+void drawCenter(const char* a, const char* b = nullptr);
+
+// Set up the canvas for a menu-screen draw: every Nth call does a full
+// refresh to clear e-ink ghosting; the rest go through fastmode. Counts
+// independently of the reader's full-refresh schedule.
+void prepareMenuFrame();
+
 // Draw one row of a scrollable menu list. Text starts at
 // `UI_LIST_LEFT + extraIndent` on the given baseline; bold if selected.
-// Resets font to MAIN_FONT afterwards. Most callers pass no indent;
+// Resets font to Body afterwards. Most callers pass no indent;
 // LibraryScreen passes its folder-depth + system-nudge offset.
 void drawMenuRow(int yBaseline, const String& label, bool selected, int extraIndent = 0);
 

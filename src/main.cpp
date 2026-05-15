@@ -12,8 +12,10 @@
 #include "storage/list_items.h"
 #include "storage/page_cache.h"
 #include "storage/settings_store.h"
+#include "ui/font.h"
 #include "ui/reader.h"
 #include "ui/screen.h"
+#include "ui/widgets.h"  // drawCenter
 #include "ui/screens/about_screen.h"
 #include "ui/screens/bookmarks/book_select_screen.h"
 #include "ui/screens/bookmarks/bookmark_list_screen.h"
@@ -53,9 +55,6 @@ void setup() {
   attachInterrupt(digitalPinToInterrupt(BTN), btnISR, CHANGE);
 
   u8g2.begin(gfx);
-  invalidateMetrics();
-  (void)getMetrics();
-  resetOffsetCache();
 
 #if HAS_BATTERY
   adcSetupOnce();
@@ -79,7 +78,7 @@ void setup() {
 
   prefs.begin("ereader", false);
   loadSettings();
-  applyFontSize(g_settings.fontSize);
+  Font::loadSettings();
   loadBooks();
   loadListItems();
   registerWebRoutes();

@@ -2,6 +2,7 @@
 
 #include "hal/display.h"
 #include "storage/list_items.h"
+#include "ui/font.h"
 #include "ui/screens/library_screen.h"
 #include "ui/widgets.h"
 
@@ -11,7 +12,7 @@ void ListScreen::onEnter() {
 
 void ListScreen::draw() {
   prepareMenuFrame();
-  u8g2.setFont(MAIN_FONT);
+  Font::useBody();
   int y = drawSectionHeader("List");
 
   if (!listHasVisibleItems()) {
@@ -49,10 +50,10 @@ void ListScreen::draw() {
 
       if (selected && line2.length() > 0 && budget >= 2) {
         int row2Y = rowY + lineH;
-        u8g2.setFont(BOLD_FONT);
+        Font::useBold();
         u8g2.setCursor(UI_LIST_LEFT, row2Y);
         u8g2.print(line2.c_str());
-        u8g2.setFont(MAIN_FONT);
+        Font::useBody();
         if (done) drawStrike(row2Y, line2);
         return 2;
       }

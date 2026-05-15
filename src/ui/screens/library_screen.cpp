@@ -5,6 +5,7 @@
 #include "pure/paths.h"               // folderLeafLabel, bookLeafLabel
 #include "storage/library.h"
 #include "storage/list_items.h"       // listHasVisibleItems
+#include "ui/font.h"
 #include "ui/reader.h"
 #include "ui/screens/about_screen.h"
 #include "ui/screens/bookmarks/book_select_screen.h"
@@ -145,7 +146,7 @@ void LibraryScreen::onEnter() {
 
 void LibraryScreen::draw() {
   prepareMenuFrame();
-  u8g2.setFont(MAIN_FONT);
+  Font::useBody();
 
   // Decide which system entries to show. "List" only appears when the
   // todo list has visible items; the rest are always present.
