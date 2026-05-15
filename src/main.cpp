@@ -9,6 +9,7 @@
 #include "pure/hashing.h"
 #include "storage/fs_util.h"
 #include "storage/library.h"
+#include "storage/list_items.h"
 #include "storage/page_cache.h"
 #include "storage/settings_store.h"
 #include "ui/reader.h"
@@ -80,6 +81,7 @@ void setup() {
   loadSettings();
   applyFontSize(g_settings.fontSize);
   loadBooks();
+  loadListItems();
   registerWebRoutes();
   markUserActivity();
 

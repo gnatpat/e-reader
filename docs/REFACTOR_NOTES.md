@@ -1,9 +1,10 @@
 # Refactor opportunities
 
 Captured from a code-review pass. The seven items below were the original
-candidates, roughly ordered by payoff-per-effort. Items 1, 2, and 3 are
-done, plus a bonus bug fix around byte-offset-vs-page-number for saved
-reading progress and bookmarks (see "Bonus bug" section near the bottom).
+candidates, roughly ordered by payoff-per-effort. Items 1, 2, 3, 5, and 7
+are done, plus several bonus bug fixes (font-change correctness, on-disk
+page cache invalidation, folder expansion alignment) — see the "Bonus
+bug" tail near the bottom.
 
 ## Status summary
 
@@ -13,7 +14,7 @@ reading progress and bookmarks (see "Bonus bug" section near the bottom).
 | 2 | Split `g_reader` god-struct | **Done** (plus a cascade of "trust the invariant" cleanups) |
 | 3 | Extract a `ScrollableList` widget | **Done** (plus a `drawMenuRow` API cleanup) |
 | 4 | `web.cpp` is 1180 lines of hand-rolled HTML | Open |
-| 5 | Move more logic into `pure/` | Open (partial: `bookLeafLabel` moved) |
+| 5 | Move more logic into `pure/` | **Done** (split `g_library` god-struct + `pure/library_nav` with host tests) |
 | 6 | Split `state.h` to speed up builds | Open |
 | 7 | Heap-allocated `String` on hot paths | **Done** |
 
@@ -235,16 +236,112 @@ Two paths, increasing in scope:
 The SPA version is the right end state if web is going to keep growing; the
 template extraction is enough if web is "done".
 
-## 5. Move more logic into `pure/`
+## 5. Move more logic into `pure/` — DONE
 
-Menu navigation (cursor up/down, wrap, expand folder, build entry list) is
-pure logic currently entangled with `g_library` globals. Same for the
-bookmark-flow state transitions across the three screens. Extract into pure
-types with operations like `Library::cursorDown()`,
-`Library::toggleExpand(folderIdx)` — testable in the host CMake build,
-mostly mechanical to extract.
+Started as "port menu navigation into pure," ended as a deeper split of
+`g_library` along the same fault lines as `g_reader` in #2. The original
+`LibraryState` was bundling three independent concerns:
 
-(Partial credit: `bookLeafLabel` moved to `pure/paths.cpp` during refactor #1.)
+- **Catalog** (`books[]`, `folders[]`) — stable inventory of disk
+- **Navigation state** (`selectedItem`, `folderExpanded[]`) — UI cursor
+- **Derived view** (`entryTypes/Refs/Depths[]`) — recomputed every draw
+
+Three lifecycles, three consumers, one struct. After the split:
+
+| Was on `g_library` | Now lives in | Owner |
+|---|---|---|
+| `books`, `folders` (+ counts) | `pure/library_nav.h::Catalog`, instance `g_library` | `storage/library.{h,cpp}` |
+| `selectedItem` | `static int s_cursor` | `library_screen.cpp` |
+| `folderExpanded[]` | `static char s_expandedNames[][]` (name-keyed) | `library_screen.cpp` |
+| `entries[]` (3 parallel arrays) | `static LibEntry s_entries[]` (single AoS) | `library_screen.cpp` |
+| `currentFolder` | (deleted — was unused) | — |
+
+### Catalog moved to `pure/`
+
+`Catalog` and `BookInfo` are pure POD (`char[]` arrays + `size_t`), no
+device deps. Putting them in `pure/library_nav.h` matches the existing
+pattern of `pure/page_offset_table.h` + `storage/page_cache.cpp` — pure
+owns the data type, storage owns the I/O ops that populate it. Means the
+assembler (below) can take the catalog directly without view-building
+glue at the call site.
+
+### Pure assembler
+
+`buildLibraryEntries(catalog, folderExpanded, systemEntries, out, cap)`
+in `pure/library_nav.cpp` flattens catalog + expansion + system entries
+into the menu rows the screen draws. Replaced three storage-side helpers
+(`buildLibraryEntries`, `addLibraryFolderTree`, `addLibraryBookEntry`)
+that were reaching directly into `g_library` and a `g_library`-borrowed
+`folderExpanded[]`.
+
+System entries (`Bookmarks`/`List`/`About`/`Upload`) are now passed in
+by the screen rather than hardcoded in the storage function. Adding /
+reordering is a one-line edit in the screen.
+
+8 new host tests in `test/test_library_nav.cpp`: empty catalog, root
+books after folder tree, expanded folder shows children at depth+1,
+subfolders nest, collapsed parent hides expanded child, system entries
+appended in given order, `outCap` respected, catalog ordering preserved.
+
+### Folder expansion: name-keyed, not index-keyed
+
+Initial Phase-1 split kept `folderExpanded[]` as a `bool[MAX_FOLDERS]`
+keyed by folder index. That was wrong: web handlers call `loadBooks()`
+13+ times across the file, each of which re-sorts `g_library.folders[]`
+and shifts indices arbitrarily. The expansion flags would silently drift
+out of sync with whatever folder happened to land at each index.
+
+The `refreshLibrary()` wrapper that snapshot-and-restored expansion
+across `loadBooks()` only patched the *last* misalignment (when leaving
+upload mode); everything between web mutations was wrong.
+
+Fix: store the *names* of expanded folders directly:
+
+```cpp
+static char s_expandedNames[MAX_FOLDERS][MAX_FOLDER_PATH + 1];
+static int  s_expandedCount = 0;
+```
+
+`isExpanded(name)` is a linear name search; `toggleExpanded(name)` adds
+or removes by name and prunes dead entries (folders that no longer exist
+in the catalog) on the way through. `draw()` builds a temporary
+`bool[MAX_FOLDERS]` view from the current folder ordering just before
+calling the pure assembler.
+
+Now `loadBooks()` is safe to call freely — any reshuffle of
+`g_library.folders[]` is reflected on the next draw with no
+reconciliation step. `refreshLibrary` deleted entirely; upload-screen
+reverts to plain `loadBooks()`.
+
+Cost: ~2 KB extra RAM (32 × 64-byte name slots vs 32 booleans). Worth
+it for correctness.
+
+### Other cleanups along the way
+
+- **`loadBooks` no longer drags the todo list along.** Old `loadBooks`
+  silently called `loadListItems()` and clamped the list cursor —
+  unrelated concern that was here because the original god-struct mixed
+  globals. Stripped out; `loadListItems()` now preserves its own cursor
+  across reload (the workaround moved to where it actually belongs);
+  boot adds an explicit `loadListItems()` call.
+- **`isFolderExpanded`/`setFolderExpanded`/`libraryFolderExists`/
+  `currentFolder`** all deleted — the split made it visible they had
+  no remaining callers.
+- **`addFolderIfMissing`/`scanBooksRecursive`** marked `static` — only
+  used internally.
+- **`MAX_FOLDER_PATH = 63`** added to `config.h`; `BookInfo.folder` and
+  `Catalog::folders` use it (was hardcoded `64` in three places).
+- `storage/library.h` is now ~10 lines: `extern Catalog g_library;` and
+  `void loadBooks();`. The whole header fits in an editor preview.
+
+### What was deliberately not done
+
+- **Cursor wrap as a pure helper.** `(s_cursor + 1) % s_entryCount` is
+  one line at one call site; a pure `cursorDown(int, int)` helper would
+  add file overhead for no readability gain.
+- **Bookmark-flow state machine into pure.** Still attached to
+  `BookmarkPreviewScreen`'s share-vs-don't-share question (see the
+  follow-up at the bottom). Deferred until that decision is made.
 
 ## 6. `state.h` as a universal include is hurting build times
 
@@ -336,13 +433,13 @@ abstraction would have been pure surface area without buying anything. If
 
 ## Suggested next moves
 
-With #1, #2, #3, and #7 done, the remaining items are all
-structural-organization wins rather than reliability wins. Priority:
+With #1, #2, #3, #5, and #7 done, only structural-polish items remain.
+Priority:
 
-1. **#5 (more into pure/)** — mechanical, testable. Good ratio if you
-   want more host-test coverage. Menu navigation, bookmark-flow state
-   transitions, and similar pure-logic-trapped-in-firmware bits are the
-   obvious targets.
+1. **BookmarkPreviewScreen / `g_reader` split** (smaller follow-ups
+   tail, below) — the most coherent thing left. Resolves the
+   share-vs-don't-share fuzziness that was the original ask of the
+   session that landed #5 and #7.
 
 2. **#6 (state.h split)** — build-time win. Worth doing eventually but
    doesn't change runtime or readability much.

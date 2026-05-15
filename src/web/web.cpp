@@ -713,7 +713,7 @@ static void doFactoryReset() {
   // wipe ambient ui/library state — wake state and the rest of NVS are
   // nuked by prefs.clear() below.
   resetUiEphemeralState();
-  resetNavigationState();
+  resetLibraryNav();
 
   prefs.clear();
   FS.end();

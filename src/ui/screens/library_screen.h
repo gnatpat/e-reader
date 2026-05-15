@@ -16,6 +16,7 @@ extern LibraryScreen g_libraryScreen;
 // state cleanup runs in `LibraryScreen::onEnter()` on the next dispatch.
 void navigateToLibraryRoot();
 
-// Reset the library screen's cursor + folder pointer. Called on entering
-// the library and on factory reset.
-void resetNavigationState();
+// Full reset of the library screen's nav state: cursor to 0, all folders
+// collapsed. Used by factory reset; not used on ordinary library entry
+// (which preserves folder expansion).
+void resetLibraryNav();

@@ -33,13 +33,21 @@ void sanitizeListText(String& s) {
 void loadListItems() {
   PreferencesStore kv(prefs);
   ListData data = loadList(kv);
+
+  // Reload the items from NVS, but preserve the user's UI cursor across
+  // the load (clamped to the new range). The cursor is RAM-only — nothing
+  // outside this function should be resetting it on us.
+  int prevSelection = g_list.selectedIndex;
   g_list.count = data.count;
-  g_list.selectedIndex = 0;
   for (int i = 0; i < data.count; i++) {
     std::strncpy(g_list.items[i].text, data.items[i].text, MAX_LIST_TEXT);
     g_list.items[i].text[MAX_LIST_TEXT] = '\0';
     g_list.items[i].done = data.items[i].done;
   }
+  if (g_list.count <= 0)              g_list.selectedIndex = 0;
+  else if (prevSelection < 0)         g_list.selectedIndex = 0;
+  else if (prevSelection >= g_list.count) g_list.selectedIndex = g_list.count - 1;
+  else                                g_list.selectedIndex = prevSelection;
 }
 
 void saveListItems() {

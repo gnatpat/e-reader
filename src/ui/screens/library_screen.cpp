@@ -1,8 +1,10 @@
 #include "ui/screens/library_screen.h"
 
 #include "hal/display.h"
+#include "pure/library_nav.h"         // buildLibraryEntries
+#include "pure/paths.h"               // folderLeafLabel, bookLeafLabel
 #include "storage/library.h"
-#include "storage/list_items.h"
+#include "storage/list_items.h"       // listHasVisibleItems
 #include "ui/reader.h"
 #include "ui/screens/about_screen.h"
 #include "ui/screens/bookmarks/book_select_screen.h"
@@ -12,46 +14,167 @@
 #include "ui/screens/upload_screen.h"
 #include "ui/widgets.h"
 
+// ============================================================================
+//  Library screen nav state
+//
+//  Lives here, not in `storage/library.h`: only this screen consumes any of
+//  it. The catalog (books + folders inventory) is what the rest of the
+//  codebase shares; everything below is private screen state.
+// ============================================================================
+
 // LibraryScreen-specific row indenting. Other menu screens pass nothing
 // extra to drawMenuRow; the library is the only one with folder nesting
 // and a distinguishing nudge for "system" entries (Bookmarks/List/Device/
-// Upload), so the math lives here, not in the shared widget header.
+// Upload).
 static const int LIBRARY_DEPTH_INDENT = 10;
 static const int LIBRARY_SYSTEM_NUDGE = 2;
 
-void LibraryScreen::onEnter() {
-  // Full reset on every library entry. Web/upload flows run from here, so
-  // by clearing now, downstream code never has to reason about stale
-  // reader state. NVS holds whatever persistent state matters. Wake state
-  // doesn't need clearing — it's consumed at boot, so it's already empty
-  // during runtime unless the reader has explicitly set it for next-boot.
-  clearCurrentBookState();
-  resetBookmarkSession();
-  resetNavigationState();
-  draw();
+// Nav state — cursor + folder expansion. Persists across library visits
+// (entering library doesn't collapse open folders).
+//
+// Folder expansion is keyed by *folder name*, not by index, because web
+// handlers can call `loadBooks()` between our visits — that re-sorts
+// `g_library.folders[]` and shifts indices arbitrarily. Storing names
+// means we don't have to chase those reshuffles to stay in sync.
+static int  s_cursor = 0;
+static char s_expandedNames[MAX_FOLDERS][MAX_FOLDER_PATH + 1];
+static int  s_expandedCount = 0;
+
+// Cached entry list, rebuilt each draw, read by onButton until the next
+// draw. Sized for the same upper bound the catalog can produce.
+static LibEntry s_entries[MAX_LIBRARY_ENTRIES];
+static int      s_entryCount = 0;
+
+// ----------------------------------------------------------------------------
+//  Folder expansion as a name-keyed set
+// ----------------------------------------------------------------------------
+static bool isExpanded(const char* name) {
+  for (int i = 0; i < s_expandedCount; i++) {
+    if (strcmp(s_expandedNames[i], name) == 0) return true;
+  }
+  return false;
 }
 
-static bool isSystemEntry(int idx) {
-  LibraryEntryType t = g_library.entryTypes[idx];
+// Toggle a folder's expansion. Prunes dead entries (folders that no longer
+// exist in the catalog) before mutating — the user expanding/collapsing a
+// folder is the natural moment to reconcile our set with the current
+// catalog, rather than chasing every web handler that calls `loadBooks()`.
+// Without this, the set would slowly fill with names of folders that have
+// been deleted/renamed, until we'd refuse to expand a 33rd live one.
+static void toggleExpanded(const char* name) {
+  constexpr size_t kBuf = MAX_FOLDER_PATH + 1;
+
+  int kept = 0;
+  for (int i = 0; i < s_expandedCount; i++) {
+    bool stillExists = false;
+    for (int j = 0; j < g_library.folderCount; j++) {
+      if (strcmp(s_expandedNames[i], g_library.folders[j]) == 0) {
+        stillExists = true;
+        break;
+      }
+    }
+    if (stillExists) {
+      if (kept != i) memcpy(s_expandedNames[kept], s_expandedNames[i], kBuf);
+      kept++;
+    }
+  }
+  s_expandedCount = kept;
+
+  for (int i = 0; i < s_expandedCount; i++) {
+    if (strcmp(s_expandedNames[i], name) == 0) {
+      s_expandedCount--;
+      if (i < s_expandedCount) {
+        memcpy(s_expandedNames[i], s_expandedNames[s_expandedCount], kBuf);
+      }
+      return;
+    }
+  }
+  if (s_expandedCount < MAX_FOLDERS) {
+    strncpy(s_expandedNames[s_expandedCount], name, MAX_FOLDER_PATH);
+    s_expandedNames[s_expandedCount][MAX_FOLDER_PATH] = '\0';
+    s_expandedCount++;
+  }
+}
+
+// ----------------------------------------------------------------------------
+//  Per-entry helpers
+// ----------------------------------------------------------------------------
+static bool isSystemEntryType(LibraryEntryType t) {
   return t == LIB_ENTRY_BOOKMARKS || t == LIB_ENTRY_LIST
       || t == LIB_ENTRY_ABOUT || t == LIB_ENTRY_UPLOAD;
 }
 
-static int libraryRowIndent(int idx) {
-  int indent = g_library.entryDepths[idx] * LIBRARY_DEPTH_INDENT;
-  if (isSystemEntry(idx)) indent += LIBRARY_SYSTEM_NUDGE;
+static int rowIndent(const LibEntry& e) {
+  int indent = e.depth * LIBRARY_DEPTH_INDENT;
+  if (isSystemEntryType(e.type)) indent += LIBRARY_SYSTEM_NUDGE;
   return indent;
+}
+
+static String entryLabel(const LibEntry& e) {
+  switch (e.type) {
+    case LIB_ENTRY_FOLDER: {
+      String prefix = isExpanded(g_library.folders[e.ref]) ? "- " : "+ ";
+      return prefix + folderLeafLabel(String(g_library.folders[e.ref]));
+    }
+    case LIB_ENTRY_BOOK:      return bookLeafLabel(String(g_library.books[e.ref].path));
+    case LIB_ENTRY_BOOKMARKS: return "Bookmarks";
+    case LIB_ENTRY_LIST:      return "List";
+    case LIB_ENTRY_ABOUT:     return "Device";
+    case LIB_ENTRY_UPLOAD:    return "Upload";
+  }
+  return "";
+}
+
+// ----------------------------------------------------------------------------
+//  Screen lifecycle
+// ----------------------------------------------------------------------------
+void LibraryScreen::onEnter() {
+  // Full reset of reader/bookmark scratch state on every library entry —
+  // downstream code never has to reason about stale reader state. Wake
+  // state doesn't need clearing — it's consumed at boot, so it's already
+  // empty during runtime unless the reader has explicitly armed it.
+  clearCurrentBookState();
+  resetBookmarkSession();
+
+  // Reset the cursor but preserve folder expansion across visits — user
+  // returning from a sub-screen expects their open folders still open.
+  s_cursor = 0;
+
+  draw();
 }
 
 void LibraryScreen::draw() {
   prepareMenuFrame();
   u8g2.setFont(MAIN_FONT);
-  buildLibraryEntries();
+
+  // Decide which system entries to show. "List" only appears when the
+  // todo list has visible items; the rest are always present.
+  LibraryEntryType systemEntries[4];
+  int systemCount = 0;
+  systemEntries[systemCount++] = LIB_ENTRY_BOOKMARKS;
+  if (listHasVisibleItems()) systemEntries[systemCount++] = LIB_ENTRY_LIST;
+  systemEntries[systemCount++] = LIB_ENTRY_ABOUT;
+  systemEntries[systemCount++] = LIB_ENTRY_UPLOAD;
+
+  // Build the bool[] view that the assembler wants from our name-keyed
+  // expansion set, against the current folder ordering.
+  bool expanded[MAX_FOLDERS] = {false};
+  for (int i = 0; i < g_library.folderCount; i++) {
+    expanded[i] = isExpanded(g_library.folders[i]);
+  }
+
+  s_entryCount = buildLibraryEntries(g_library, expanded,
+                                     systemEntries, systemCount,
+                                     s_entries, MAX_LIBRARY_ENTRIES);
+
+  if (s_cursor < 0) s_cursor = 0;
+  if (s_cursor >= s_entryCount) s_cursor = max(0, s_entryCount - 1);
+
   int y = drawSectionHeader("Library");
 
-  drawScrollableList(y, g_library.entryCount, g_library.selectedItem,
+  drawScrollableList(y, s_entryCount, s_cursor,
     [&](int idx, int rowY, bool selected, int /*budget*/) {
-      drawMenuRow(rowY, libraryEntryLabel(idx), selected, libraryRowIndent(idx));
+      drawMenuRow(rowY, entryLabel(s_entries[idx]), selected, rowIndent(s_entries[idx]));
       return 1;
     });
 
@@ -61,34 +184,31 @@ void LibraryScreen::draw() {
 void LibraryScreen::onButton(const ButtonEvent& e) {
   if (!e.any()) return;
 
-  int totalItems = g_library.entryCount;
-
   if (e.kind == ButtonEvent::Short) {
-    g_library.selectedItem++;
-    if (g_library.selectedItem >= totalItems) g_library.selectedItem = 0;
+    if (s_entryCount > 0) {
+      s_cursor = (s_cursor + 1) % s_entryCount;
+    }
     draw();
     return;
   }
 
   if (e.kind != ButtonEvent::Double) return;
 
-  if (g_library.selectedItem < 0 || g_library.selectedItem >= g_library.entryCount) {
+  if (s_cursor < 0 || s_cursor >= s_entryCount) {
     draw();
     return;
   }
 
-  LibraryEntryType entryType = g_library.entryTypes[g_library.selectedItem];
-  int entryRef = g_library.entryRefs[g_library.selectedItem];
+  const LibEntry& sel = s_entries[s_cursor];
 
-  if (entryType == LIB_ENTRY_FOLDER) {
-    bool expanded = isFolderExpanded(entryRef);
-    setFolderExpanded(entryRef, !expanded);
+  if (sel.type == LIB_ENTRY_FOLDER) {
+    toggleExpanded(g_library.folders[sel.ref]);
     draw();
     return;
   }
 
-  if (entryType == LIB_ENTRY_BOOK) {
-    if (openBookByIndex(entryRef)) {
+  if (sel.type == LIB_ENTRY_BOOK) {
+    if (openBookByIndex(sel.ref)) {
       nextScreen = &g_readerScreen;
     } else {
       drawCenter("Open failed", "Try upload again");
@@ -97,30 +217,38 @@ void LibraryScreen::onButton(const ButtonEvent& e) {
     return;
   }
 
-  if (entryType == LIB_ENTRY_BOOKMARKS) {
+  if (sel.type == LIB_ENTRY_BOOKMARKS) {
     nextScreen = &g_bmBookSelectScreen;
     return;
   }
 
-  if (entryType == LIB_ENTRY_LIST) {
+  if (sel.type == LIB_ENTRY_LIST) {
     g_list.selectedIndex = 0;
     nextScreen = &g_listScreen;
     return;
   }
 
-  if (entryType == LIB_ENTRY_ABOUT) {
+  if (sel.type == LIB_ENTRY_ABOUT) {
     nextScreen = &g_aboutScreen;
     return;
   }
 
-  nextScreen = &g_uploadScreen;
+  if (sel.type == LIB_ENTRY_UPLOAD) {
+    nextScreen = &g_uploadScreen;
+    return;
+  }
+
+  Serial.println("LibraryScreen: unhandled entry type " + String(sel.type));
 }
 
+// ============================================================================
+//  Public ops for callers outside the screen
+// ============================================================================
 void navigateToLibraryRoot() {
   if (g_currentScreen) g_currentScreen->nextScreen = &g_libraryScreen;
 }
 
-void resetNavigationState() {
-  g_library.currentFolder = "";
-  g_library.selectedItem = 0;
+void resetLibraryNav() {
+  s_cursor = 0;
+  s_expandedCount = 0;
 }

@@ -1,57 +1,18 @@
 #pragma once
 
-#include "config.h"
 #include "pure/arduino_compat.h"
+#include "pure/library_nav.h"  // Catalog, BookInfo, LibraryEntryType, LibEntry
 
 // ============================================================================
-//  Library catalog — books + folders discovered on LittleFS, plus the
-//  flattened "library entries" list that the library screen iterates over.
-//  Owned here; populated by `loadBooks()` / `buildLibraryEntries()` below.
+//  The discovered library. Pure types live in `pure/library_nav.h`; this
+//  header owns the global instance + the disk-loading operations that
+//  populate it. Navigation state (cursor, folder expansion, the derived
+//  display-list) lives on the library screen.
 // ============================================================================
-enum LibraryEntryType {
-  LIB_ENTRY_FOLDER,
-  LIB_ENTRY_BOOK,
-  LIB_ENTRY_BOOKMARKS,
-  LIB_ENTRY_LIST,
-  LIB_ENTRY_ABOUT,
-  LIB_ENTRY_UPLOAD
-};
+extern Catalog g_library;
 
-struct BookInfo {
-  char name[80];
-  char path[96];
-  size_t size;
-  char folder[64];
-};
-
-struct LibraryState {
-  BookInfo books[MAX_BOOKS];
-  int bookCount = 0;
-
-  char folders[MAX_FOLDERS][64];
-  int folderCount = 0;
-
-  int selectedItem = 0;
-  String currentFolder;
-
-  LibraryEntryType entryTypes[MAX_LIBRARY_ENTRIES];
-  int entryRefs[MAX_LIBRARY_ENTRIES];
-  int entryDepths[MAX_LIBRARY_ENTRIES];
-  int entryCount = 0;
-
-  bool folderExpanded[MAX_FOLDERS] = {false};
-};
-
-extern LibraryState g_library;
-
-void addFolderIfMissing(const String& folderRel);
-void scanBooksRecursive(const String& absDir, const String& relDir);
+// Catalog-only refresh. Reloads `g_library` from disk. Safe to call
+// freely: the library screen keys folder expansion by name, so any
+// reshuffle of `g_library.folders[]` here is reflected on the next draw
+// without callers having to do anything special.
 void loadBooks();
-
-bool libraryFolderExists(const String& folderRel);
-String libraryEntryLabel(int idx);
-void buildLibraryEntries();
-
-// Folder expand/collapse cursor state on `g_library`.
-bool isFolderExpanded(int idx);
-void setFolderExpanded(int idx, bool expanded);

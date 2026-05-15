@@ -17,6 +17,7 @@ set(SUT_SRC
   ${CMAKE_SOURCE_DIR}/../src/pure/text_util.cpp
   ${CMAKE_SOURCE_DIR}/../src/pure/hashing.cpp
   ${CMAKE_SOURCE_DIR}/../src/pure/paginator.cpp
+  ${CMAKE_SOURCE_DIR}/../src/pure/library_nav.cpp
   ${CMAKE_SOURCE_DIR}/../src/pure/bookmark_label.cpp
   ${CMAKE_SOURCE_DIR}/../src/pure/bookmarks_codec.cpp
   ${CMAKE_SOURCE_DIR}/../src/pure/list_codec.cpp
@@ -31,6 +32,7 @@ set(TEST_SRC
   ${CMAKE_CURRENT_SOURCE_DIR}/test_text_util.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/test_hashing.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/test_paginator.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/test_library_nav.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/test_bookmark_label.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/test_bookmarks_codec.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/test_list_codec.cpp
