@@ -2,6 +2,9 @@
 
 #include <esp_timer.h>
 
+// Flip to 0 to silence per-edge / per-commit logs once tuning is done.
+#define INPUT_DEBUG 1
+
 ButtonState g_btns;
 
 // Time of the last accepted user input. Used by the loop to decide when
@@ -165,6 +168,10 @@ void IRAM_ATTR btnISR() {
   s_btnQ.head = next;
 }
 
+bool buttonQueueNonEmpty() {
+  return s_btnQ.head != s_btnQ.tail;
+}
+
 void injectButtonEdgeNow(bool pressed) {
   noInterrupts();
   uint8_t next = (uint8_t)((s_btnQ.head + 1) % BTN_Q);
@@ -259,6 +266,14 @@ void ButtonState::poll() {
     if (!prevPressed && stablePressed_) {
       pressStart_ = edgeTime;
       pressArmed_ = true;
+#if INPUT_DEBUG
+      if (lastRelease_ != 0 && clickCount_ > 0) {
+        Serial.printf("[input] press   (gap=%ums, count=%u)\n",
+                      (uint32_t)(edgeTime - lastRelease_), clickCount_);
+      } else {
+        Serial.printf("[input] press\n");
+      }
+#endif
     }
 
     // On a clean release, if we're armed, classify the click by duration and
@@ -272,12 +287,19 @@ void ButtonState::poll() {
         // since we don't want to emit a long click on an accidental long press that
         // we didn't see the release for (e.g., if the button got stuck).
         if (dur >= LONG_MS) {
+#if INPUT_DEBUG
+          Serial.printf("[input] release dur=%ums -> LONG (prior count=%u dropped)\n",
+                        dur, clickCount_);
+#endif
           clickCount_ = 0;
           longClick_ = true;
         } else {
           clickCount_++;
           lastRelease_ = edgeTime;
           if (clickCount_ == 1) firstClickRelease_ = edgeTime;
+#if INPUT_DEBUG
+          Serial.printf("[input] release dur=%ums count=%u\n", dur, clickCount_);
+#endif
         }
       }
       pressArmed_ = false;
@@ -314,10 +336,18 @@ void ButtonState::poll() {
     bool readyByTime     = (gapElapsed || sequenceTimeout) && !stablePressed_;
 
     if (readyByTime || quadReady) {
-      if      (clickCount_ == 1) shortClick_  = true;
-      else if (clickCount_ == 2) doubleClick_ = true;
-      else if (clickCount_ == 3) tripleClick_ = true;
-      else if (clickCount_ >= 4) quadClick_   = true;
+      const char* kind = "?";
+      if      (clickCount_ == 1) { shortClick_  = true; kind = "SHORT"; }
+      else if (clickCount_ == 2) { doubleClick_ = true; kind = "DOUBLE"; }
+      else if (clickCount_ == 3) { tripleClick_ = true; kind = "TRIPLE"; }
+      else if (clickCount_ >= 4) { quadClick_   = true; kind = "QUAD"; }
+#if INPUT_DEBUG
+      uint32_t span = (clickCount_ >= 2) ? (uint32_t)(lastRelease_ - firstClickRelease_) : 0;
+      uint32_t latency = (uint32_t)(now - lastRelease_);
+      Serial.printf("[input] commit %s count=%u span=%ums latency=%ums (%s)\n",
+                    kind, clickCount_, span, latency,
+                    quadReady ? "quad-immediate" : "gap-elapsed");
+#endif
       clickCount_ = 0;
     }
   }

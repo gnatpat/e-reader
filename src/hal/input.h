@@ -106,6 +106,14 @@ void resetInputFrontend();
 // real ISR also fires — debounce naturally suppresses duplicates.
 void injectButtonEdgeNow(bool pressed);
 
+// True iff the ISR ring buffer has un-drained edges. Used by the main loop's
+// light-sleep gate to close the race where an edge is queued by the ISR
+// between the most recent `poll()` and the gate check itself: without this,
+// `hasPendingClicks()` would still be false (the release isn't reflected in
+// `clickCount_` until poll runs) and we'd sleep, missing the release until
+// the timer wake fires. Atomic single-byte read; no lock needed.
+bool buttonQueueNonEmpty();
+
 // Inspect the ISR-overflow counter; if it's climbed past the recovery
 // threshold, atomically reset it and resync the button state machine.
 // Called once per loop iteration after polling. Returns true if a recovery

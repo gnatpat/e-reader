@@ -137,7 +137,17 @@ void loop() {
   // latency per emit. Cost of staying awake during a click sequence is at
   // most ~550ms (MAX_CLICK_SEQUENCE_MS); the long quiet gaps between page
   // turns are where the battery savings actually come from.
-  if (g_currentScreen->allowSleep() && !g_btns.hasPendingClicks()) {
+  //
+  // The `buttonQueueNonEmpty()` check closes a race: the ISR can queue a
+  // release edge after this iter's `poll()` ran but before we reach this
+  // gate — `clickCount_` is still 0 at that instant, but the edge is
+  // sitting in the ring buffer waiting to be drained. Without the check we
+  // sleep through it; ext0 (level-low) doesn't fire on a release, so we'd
+  // only re-process the edge on the next timer wake (~150ms later in the
+  // worst case under the bound below).
+  if (g_currentScreen->allowSleep()
+      && !g_btns.hasPendingClicks()
+      && !buttonQueueNonEmpty()) {
     Sleep::idleLightSleep(Toast::isActive());
   }
 }

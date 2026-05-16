@@ -97,7 +97,14 @@ void idleLightSleep(bool tightTick) {
   // the click classifier's edge timing.
   if (digitalRead(BTN) == LOW) return;
 
-  const uint64_t timerUs = tightTick ? 50ULL * 1000 : 500ULL * 1000;
+  // Tight: in a state that needs frequent polling (active toast). Loose: just
+  // a heartbeat — button presses wake us instantly via ext0 regardless of
+  // this interval. 150ms loose caps the worst-case fallback latency if a
+  // release somehow lands in the tiny residual race window between the
+  // main-loop sleep gate and `esp_light_sleep_start()`; battery cost vs. a
+  // longer interval is negligible (a few extra wake-poll-sleep cycles per
+  // second of true idle).
+  const uint64_t timerUs = tightTick ? 50ULL * 1000 : 150ULL * 1000;
 
   esp_sleep_enable_ext0_wakeup((gpio_num_t)BTN, 0);   // wake on button-low
   esp_sleep_enable_timer_wakeup(timerUs);
