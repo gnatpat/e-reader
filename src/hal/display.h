@@ -12,7 +12,7 @@
 // ============================================================================
 class HeltecGFXAdapter : public Adafruit_GFX {
 public:
-  explicit HeltecGFXAdapter(EInkDisplay_WirelessPaperV1_2& d)
+  explicit HeltecGFXAdapter(EInkDisplay& d)
     : Adafruit_GFX(SCREEN_W, SCREEN_H), disp(d) {}
 
   void drawPixel(int16_t x, int16_t y, uint16_t color) override {
@@ -24,7 +24,7 @@ public:
   }
 
 private:
-  EInkDisplay_WirelessPaperV1_2& disp;
+  EInkDisplay& disp;
 };
 
 extern HeltecGFXAdapter gfx;

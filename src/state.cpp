@@ -3,7 +3,7 @@
 // ============================================================================
 //  Display + adapter (definitions; adapter class lives in display.h)
 // ============================================================================
-EInkDisplay_WirelessPaperV1_2 display;
+EInkDisplay display;
 
 // ============================================================================
 //  Globals — instances of the shared state structs declared in state.h.

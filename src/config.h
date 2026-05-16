@@ -19,7 +19,7 @@
 
 #include "pure/arduino_compat.h"
 
-#define FW_VERSION "2.1"
+#define FW_VERSION "2.1a"
 
 // BUILD_GIT_HASH is injected by scripts/build_info.py at PlatformIO build
 // time. Host-test builds skip that script, so provide a fallback so the
@@ -27,7 +27,22 @@
 #ifndef BUILD_GIT_HASH
 #define BUILD_GIT_HASH "unknown"
 #endif
+
 #define FW_BUILD FW_VERSION " (" BUILD_GIT_HASH ")"
+
+// DEBUG_BUILD = 1 shows the git hash in the on-device library screen header
+// (the front face of the device). About screen + web UI always show the
+// hash regardless — those are debug surfaces. Defaults on for local + main-
+// branch CI builds; the release workflow passes `-DDEBUG_BUILD=0` for tags.
+#ifndef DEBUG_BUILD
+#define DEBUG_BUILD 1
+#endif
+
+#if DEBUG_BUILD
+  #define LIB_HEADER_TITLE "Pala One " BUILD_GIT_HASH
+#else
+  #define LIB_HEADER_TITLE "Pala One"
+#endif
 
 static const int SCREEN_W = 250;
 static const int SCREEN_H = 122;

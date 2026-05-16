@@ -2,7 +2,6 @@ name: Deploy installer page
 
 on:
   push:
-    branches: [main, master]
     tags: ['v*']
   workflow_dispatch:
 
@@ -38,8 +37,18 @@ jobs:
       - name: Install PlatformIO and esptool
         run: pip install --upgrade platformio esptool
 
-      - name: Build firmware
-        run: pio run -e wireless-paper
+      - name: Build firmware (V1.2)
+        env:
+          # Tag pushes build a clean release (no git hash in UI). Anything
+          # else (workflow_dispatch) keeps DEBUG_BUILD=1 from config.h so the
+          # hash stays visible during iteration.
+          PLATFORMIO_BUILD_FLAGS: ${{ startsWith(github.ref, 'refs/tags/') && '-DDEBUG_BUILD=0' || '' }}
+        run: pio run -e wireless-paper-v1_2
+
+      - name: Build firmware (V1.1)
+        env:
+          PLATFORMIO_BUILD_FLAGS: ${{ startsWith(github.ref, 'refs/tags/') && '-DDEBUG_BUILD=0' || '' }}
+        run: pio run -e wireless-paper-v1_1
 
       - name: Assemble site
         run: |
@@ -47,20 +56,26 @@ jobs:
           mkdir -p site
           cp install/index.html site/
 
-          BUILD_DIR=.pio/build/wireless-paper
+          # bootloader / partitions / boot_app0 are byte-identical between the
+          # two envs (same chip, same partition table). Take them from the V1.2
+          # build dir; the V1.1 build produces the same bytes.
+          V12=.pio/build/wireless-paper-v1_2
+          V11=.pio/build/wireless-paper-v1_1
           BOOT_APP0=$(find ~/.platformio/packages/framework-arduinoespressif32/tools/partitions -name boot_app0.bin | head -n1)
 
-          cp "$BUILD_DIR/bootloader.bin" site/bootloader.bin
-          cp "$BUILD_DIR/partitions.bin" site/partitions.bin
-          cp "$BOOT_APP0"                site/boot_app0.bin
-          cp "$BUILD_DIR/firmware.bin"   site/firmware.bin
+          cp "$V12/bootloader.bin" site/bootloader.bin
+          cp "$V12/partitions.bin" site/partitions.bin
+          cp "$BOOT_APP0"          site/boot_app0.bin
+          cp "$V12/firmware.bin"   site/firmware-v1_2.bin
+          cp "$V11/firmware.bin"   site/firmware-v1_1.bin
 
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then
             VERSION="${GITHUB_REF_NAME}"
           else
             VERSION="dev-${GITHUB_SHA::7}"
           fi
-          jq --arg v "$VERSION" '.version = $v' install/manifest.json > site/manifest.json
+          jq --arg v "$VERSION" '.version = $v' install/manifest-v1_2.json > site/manifest-v1_2.json
+          jq --arg v "$VERSION" '.version = $v' install/manifest-v1_1.json > site/manifest-v1_1.json
 
           ls -lh site
 
