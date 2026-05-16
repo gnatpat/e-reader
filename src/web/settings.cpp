@@ -31,7 +31,7 @@ static void handleSettings() {
 
   String out = webPageStart(
     "Pala One Settings",
-    "Firmware " FW_VERSION " configuration page stored directly on the device.",
+    "Firmware " FW_BUILD " configuration page stored directly on the device.",
     "<a href='/'>&#8592; Home</a>"
   );
   out.reserve(out.length() + 4000);

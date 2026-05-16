@@ -17,7 +17,7 @@ void AboutScreen::draw() {
   int y = drawSectionHeader("Device");
 
   String rows[5] = {
-    "Firmware " FW_VERSION,
+    "Firmware " FW_BUILD,
     "1x next / down",
     "2x open / select",
     "3x home",

@@ -23,7 +23,7 @@
 
 static void handleRoot() {
   String subtitle = "Firmware ";
-  subtitle += FW_VERSION;
+  subtitle += FW_BUILD;
   subtitle += " &middot; ";
   subtitle += String(g_library.bookCount);
   subtitle += " books &middot; Free: ";

@@ -21,6 +21,14 @@
 
 #define FW_VERSION "2.1"
 
+// BUILD_GIT_HASH is injected by scripts/build_info.py at PlatformIO build
+// time. Host-test builds skip that script, so provide a fallback so the
+// preprocessor never sees an undefined macro.
+#ifndef BUILD_GIT_HASH
+#define BUILD_GIT_HASH "unknown"
+#endif
+#define FW_BUILD FW_VERSION " (" BUILD_GIT_HASH ")"
+
 static const int SCREEN_W = 250;
 static const int SCREEN_H = 122;
 

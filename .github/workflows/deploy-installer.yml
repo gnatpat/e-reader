@@ -50,13 +50,10 @@ jobs:
           BUILD_DIR=.pio/build/wireless-paper
           BOOT_APP0=$(find ~/.platformio/packages/framework-arduinoespressif32/tools/partitions -name boot_app0.bin | head -n1)
 
-          esptool.py --chip esp32s3 merge_bin \
-            -o site/merged.bin \
-            --flash_mode keep --flash_size keep \
-            0x0     "$BUILD_DIR/bootloader.bin" \
-            0x8000  "$BUILD_DIR/partitions.bin" \
-            0xe000  "$BOOT_APP0" \
-            0x10000 "$BUILD_DIR/firmware.bin"
+          cp "$BUILD_DIR/bootloader.bin" site/bootloader.bin
+          cp "$BUILD_DIR/partitions.bin" site/partitions.bin
+          cp "$BOOT_APP0"                site/boot_app0.bin
+          cp "$BUILD_DIR/firmware.bin"   site/firmware.bin
 
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then
             VERSION="${GITHUB_REF_NAME}"
