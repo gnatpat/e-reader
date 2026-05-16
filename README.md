@@ -13,7 +13,7 @@ It also adds a web installer for easy flashing.
 
 ## Install (no toolchain needed)
 
-[Web Installer](https://paullagier.github.io/pala-one/install/)
+[Web Installer](https://gnatpat.github.io/e-reader/)
 
 The easiest way to flash a board is via the web installer. Plug your Heltec Wireless Paper into a desktop computer running Chrome, Edge, or Opera, then open the installer page and click **Install** for your display revision (V1.1 or V1.2).
 
