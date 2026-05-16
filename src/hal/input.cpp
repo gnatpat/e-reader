@@ -2,9 +2,6 @@
 
 #include <esp_timer.h>
 
-// Flip to 0 to silence per-edge / per-commit logs once tuning is done.
-#define INPUT_DEBUG 1
-
 ButtonState g_btns;
 
 // Time of the last accepted user input. Used by the loop to decide when
@@ -195,19 +192,29 @@ void injectButtonEdgeNow(bool pressed) {
 //
 // The classifier is awkward for one reason: the meaning of a click depends
 // on what comes AFTER it. A short click is only a short click once enough
-// silence has passed to rule out a double. So we have two distinct emit
-// points: one inside the drain loop (long/quad — unambiguous on release),
-// one after the drain loop (short/double/triple — needs a trailing-silence
-// timer against millis()).
+// silence has passed to rule out a double. So we have three emit points:
+//   1. Inside the drain loop, on a release whose duration >= LONG_MS —
+//      defensive fallback; in normal operation point 2 fires first.
+//   2. After the drain loop, when stablePressed_ AND pressArmed_ AND the
+//      hold has crossed LONG_MS — fires the long-click while the button
+//      is still held, so the user gets feedback at the threshold instead
+//      of after release. Sets pressArmed_=false to make the eventual
+//      release a no-op (the release path's `if (pressArmed_)` guard skips).
+//   3. After the drain loop, when a click sequence (short/double/triple)
+//      has settled past its trailing-silence window.
 //
 // State that persists across calls — defined in input.h on ButtonState.
 // Trailing-underscore names are member variables (vs. locals).
 //   stablePressed_       last accepted physical state (true = pressed)
 //   lastStableChange_    edge-time of last accepted transition (debounce ref)
 //   pressStart_          edge-time of the current press's down-edge
-//   pressArmed_          should this press's release count?
-//                        cleared by clearButtonQueue() / resetState() so
-//                        a release we didn't see the press for is ignored
+//   pressArmed_          has this press not yet produced an event?
+//                        true between press and the event it generates
+//                        (either a release-time classification or a
+//                        hold-detected long-click). Cleared when the press
+//                        produces its event, or by clearButtonQueue() /
+//                        resetState() so a release we didn't see the press
+//                        for is ignored.
 //   lastRelease_         edge-time of the most recent release
 //   firstClickRelease_   edge-time of the first release in this sequence
 //   clickCount_          releases accumulated, not yet emitted
@@ -229,7 +236,10 @@ void injectButtonEdgeNow(bool pressed) {
 //        - On an up-edge that's armed:
 //            * duration >= LONG_MS  -> emit longClick_, reset clickCount_
 //            * else                 -> clickCount_++, remember releases
-//   3. After draining, if a click sequence is pending, commit it when ANY of:
+//   3. After draining, if a press is still held past LONG_MS, emit
+//      longClick_ now and clear pressArmed_ so the eventual release is
+//      ignored. This is the normal path for long-click emission.
+//   4. After draining, if a click sequence is pending, commit it when ANY of:
 //        - gap elapsed:      now - lastRelease_      > MAX_CLICK_GAP_MS
 //        - sequence timeout: now - firstClickRelease_ > MAX_CLICK_SEQUENCE_MS
 //        - count >= 4:       quad commits immediately (nothing it could become)
@@ -266,44 +276,47 @@ void ButtonState::poll() {
     if (!prevPressed && stablePressed_) {
       pressStart_ = edgeTime;
       pressArmed_ = true;
-#if INPUT_DEBUG
-      if (lastRelease_ != 0 && clickCount_ > 0) {
-        Serial.printf("[input] press   (gap=%ums, count=%u)\n",
-                      (uint32_t)(edgeTime - lastRelease_), clickCount_);
-      } else {
-        Serial.printf("[input] press\n");
-      }
-#endif
     }
 
     // On a clean release, if we're armed, classify the click by duration and
-    // accumulated count.
+    // accumulated count. Note: in normal operation, the hold-detection block
+    // below this loop fires the long-click and clears pressArmed_ before the
+    // release ever lands, so the `dur >= LONG_MS` branch here is a defensive
+    // fallback (e.g., for the unlikely case where poll() didn't run during
+    // the hold).
     if (prevPressed && !stablePressed_) {
       if (pressArmed_) {
         uint32_t dur = (uint32_t)(edgeTime - pressStart_);
-        // TODO: we don't necessarily need to wait for a release in order to emit
-        // a long click. If the user holds for LONG_MS, we could emit then, and
-        // avoid the wait after release. The logic is a little more complex, though,
-        // since we don't want to emit a long click on an accidental long press that
-        // we didn't see the release for (e.g., if the button got stuck).
         if (dur >= LONG_MS) {
-#if INPUT_DEBUG
-          Serial.printf("[input] release dur=%ums -> LONG (prior count=%u dropped)\n",
-                        dur, clickCount_);
-#endif
           clickCount_ = 0;
           longClick_ = true;
         } else {
           clickCount_++;
           lastRelease_ = edgeTime;
           if (clickCount_ == 1) firstClickRelease_ = edgeTime;
-#if INPUT_DEBUG
-          Serial.printf("[input] release dur=%ums count=%u\n", dur, clickCount_);
-#endif
         }
       }
       pressArmed_ = false;
       pressStart_ = 0;
+    }
+  }
+
+  // Long-press hold detection: while the button is still down past LONG_MS,
+  // fire the long-click now rather than waiting for release. Makes bookmark
+  // feedback feel instant — the toast appears as the user crosses 850ms
+  // instead of after they let go.
+  //
+  // Clearing pressArmed_ silently swallows the eventual release: the release
+  // path's `if (pressArmed_)` guard skips classification, so the release
+  // contributes nothing. Same observable state as "we never saw the press."
+  // A genuinely stuck button stays in stablePressed_=true / pressArmed_=false
+  // until the pin actually changes — the guard here gates on pressArmed_, so
+  // no further long-clicks spam out while it's stuck.
+  if (stablePressed_ && pressArmed_) {
+    if ((uint32_t)(millis() - pressStart_) >= LONG_MS) {
+      clickCount_ = 0;
+      longClick_ = true;
+      pressArmed_ = false;
     }
   }
 
@@ -336,18 +349,10 @@ void ButtonState::poll() {
     bool readyByTime     = (gapElapsed || sequenceTimeout) && !stablePressed_;
 
     if (readyByTime || quadReady) {
-      const char* kind = "?";
-      if      (clickCount_ == 1) { shortClick_  = true; kind = "SHORT"; }
-      else if (clickCount_ == 2) { doubleClick_ = true; kind = "DOUBLE"; }
-      else if (clickCount_ == 3) { tripleClick_ = true; kind = "TRIPLE"; }
-      else if (clickCount_ >= 4) { quadClick_   = true; kind = "QUAD"; }
-#if INPUT_DEBUG
-      uint32_t span = (clickCount_ >= 2) ? (uint32_t)(lastRelease_ - firstClickRelease_) : 0;
-      uint32_t latency = (uint32_t)(now - lastRelease_);
-      Serial.printf("[input] commit %s count=%u span=%ums latency=%ums (%s)\n",
-                    kind, clickCount_, span, latency,
-                    quadReady ? "quad-immediate" : "gap-elapsed");
-#endif
+      if      (clickCount_ == 1) shortClick_  = true;
+      else if (clickCount_ == 2) doubleClick_ = true;
+      else if (clickCount_ == 3) tripleClick_ = true;
+      else if (clickCount_ >= 4) quadClick_   = true;
       clickCount_ = 0;
     }
   }
