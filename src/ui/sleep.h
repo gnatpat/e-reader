@@ -23,4 +23,14 @@ uint32_t idleTimeoutMs();     // for the main loop's sleep deadline check
 // image, releases peripherals, then `esp_deep_sleep_start`s.
 void enter();
 
+// Pause the CPU until the button is pressed or a short timer fires. Caller
+// passes `tightTick` = true when something needs polling within a few tens
+// of ms (mid-sequence click classifier, active toast); false otherwise (a
+// loose heartbeat — the button still wakes us instantly regardless).
+//
+// Returns after wake. If the button caused the wake, a synthetic press
+// edge is queued so the click classifier sees it. Safe to call from the
+// main loop on any screen where `allowSleep()` is true.
+void idleLightSleep(bool tightTick);
+
 }  // namespace Sleep

@@ -165,6 +165,19 @@ void IRAM_ATTR btnISR() {
   s_btnQ.head = next;
 }
 
+void injectButtonEdgeNow(bool pressed) {
+  noInterrupts();
+  uint8_t next = (uint8_t)((s_btnQ.head + 1) % BTN_Q);
+  if (next == s_btnQ.tail) {
+    s_btnQ.tail = (uint8_t)((s_btnQ.tail + 1) % BTN_Q);
+    s_btnQ.isrDropCount++;
+  }
+  s_btnQ.state[s_btnQ.head] = pressed;
+  s_btnQ.timeMs[s_btnQ.head] = isrNowMs();
+  s_btnQ.head = next;
+  interrupts();
+}
+
 // ----------------------------------------------------------------------------
 // ButtonState::poll — interpret raw ISR edges as click events.
 //
@@ -273,20 +286,34 @@ void ButtonState::poll() {
   }
 
   // Trailing-silence check: commit the accumulated click count when ANY of:
-  //   1. The user paused for MAX_CLICK_GAP_MS since the most recent release.
+  //   1. The user paused for MAX_CLICK_GAP_MS since the most recent release
+  //      AND isn't currently pressing — an in-progress press might still be
+  //      part of the sequence (e.g., a slightly-late double-click), so we
+  //      wait for its release to find out. Without this, a press starting at
+  //      gap+epsilon would commit a single and then count the late release
+  //      as a fresh sequence — turning one intended double into two singles.
   //   2. The whole sequence has run past MAX_CLICK_SEQUENCE_MS from the first
-  //      release — caps slow multi-clicks even if individual gaps are short.
+  //      release — caps slow multi-clicks. Same press-in-progress gate.
   //   3. We hit a 4th click — quad needs no wait, there's nothing it could
-  //      become next.
+  //      become next. Commits even if a 5th press is in progress (it'll
+  //      start a fresh sequence, which is what the user means by pressing
+  //      again after the quad).
   // The mapping from final count to which flag to emit is the only thing that
   // varies by count; the timer logic is uniform.
+  //
+  // Edge case (knowingly accepted): tap-then-immediate-long-hold loses the
+  // tap. The long branch above resets clickCount_, so the pending single is
+  // dropped. Rationale: long-press is the more deliberate action; preserving
+  // its reliability matters more than chasing a flow that doesn't occur at
+  // human speeds in practice.
   if (clickCount_ > 0) {
     uint32_t now = millis();
     bool gapElapsed      = (uint32_t)(now - lastRelease_)       > MAX_CLICK_GAP_MS;
     bool sequenceTimeout = (uint32_t)(now - firstClickRelease_) > MAX_CLICK_SEQUENCE_MS;
     bool quadReady       = clickCount_ >= 4;
+    bool readyByTime     = (gapElapsed || sequenceTimeout) && !stablePressed_;
 
-    if (gapElapsed || sequenceTimeout || quadReady) {
+    if (readyByTime || quadReady) {
       if      (clickCount_ == 1) shortClick_  = true;
       else if (clickCount_ == 2) doubleClick_ = true;
       else if (clickCount_ == 3) tripleClick_ = true;

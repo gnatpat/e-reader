@@ -9,6 +9,7 @@
 #include "config.h"
 #include "state.h"
 #include "hal/display.h"
+#include "hal/input.h"          // injectButtonEdgeNow, markUserActivity
 #include "ui/pala_one_sleep_black_icon_v4.h"
 #include "ui/screen.h"
 
@@ -88,6 +89,29 @@ void enter() {
   Serial.printf("[sleep] BTN=%d entering deep sleep\n", digitalRead(BTN));
   Serial.flush();
   esp_deep_sleep_start();
+}
+
+void idleLightSleep(bool tightTick) {
+  // Don't sleep if the button is already pressed — would be a level-triggered
+  // immediate wake, burning a sleep/wake cycle for no reason and skewing
+  // the click classifier's edge timing.
+  if (digitalRead(BTN) == LOW) return;
+
+  const uint64_t timerUs = tightTick ? 50ULL * 1000 : 500ULL * 1000;
+
+  esp_sleep_enable_ext0_wakeup((gpio_num_t)BTN, 0);   // wake on button-low
+  esp_sleep_enable_timer_wakeup(timerUs);
+  esp_light_sleep_start();                            // BLOCKS until wake
+  esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
+
+  // If GPIO woke us, the press edge wasn't seen by the normal CHANGE-edge
+  // ISR (it was masked by the sleep gate). Inject a synthetic press so the
+  // classifier counts it. The release edge will be picked up normally as
+  // the user lifts off.
+  if (esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_EXT0) {
+    if (digitalRead(BTN) == LOW) injectButtonEdgeNow(true);
+    markUserActivity();
+  }
 }
 
 }  // namespace Sleep

@@ -62,6 +62,12 @@ struct ButtonState {
     return shortClick_ || doubleClick_ || tripleClick_ || quadClick_ || longClick_;
   }
 
+  // True iff the classifier is mid-sequence — at least one release has been
+  // accepted but not yet committed (waiting on trailing silence to decide
+  // short vs double vs triple). Light-sleep uses this to pick a shorter
+  // timer-wake interval so the trailing-silence check fires in time.
+  bool hasPendingClicks() const { return clickCount_ > 0; }
+
   void poll();
 };
 
@@ -92,6 +98,13 @@ struct ButtonEvent {
 void IRAM_ATTR btnISR();
 void clearButtonQueue();
 void resetInputFrontend();
+
+// Synthesize an edge into the ISR queue from a normal (non-IRQ) context.
+// Used after light-sleep GPIO wake: the ext0 wakeup path detects the level
+// but doesn't necessarily fire the edge ISR, so the press that woke us
+// would otherwise be invisible to the classifier. Safe to call even if the
+// real ISR also fires — debounce naturally suppresses duplicates.
+void injectButtonEdgeNow(bool pressed);
 
 // Inspect the ISR-overflow counter; if it's climbed past the recovery
 // threshold, atomically reset it and resync the button state machine.

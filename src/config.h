@@ -34,8 +34,12 @@ static const int MAX_LIST_ITEMS = 16;
 static const int MAX_LIST_TEXT = 64;
 
 // Max silence after the most recent release before we commit a click sequence.
-// Conceptually: "longest pause the user can take between consecutive clicks."
-static const uint32_t MAX_CLICK_GAP_MS = 300;
+// The press-in-progress gate in input.cpp's trailing-silence check means this
+// effectively bounds "dead time between release and the next press" — once a
+// press starts, the commit pauses until that release lands. So the user can
+// take this long to *start* their next click; the press itself can take as
+// long as it wants (up to LONG_MS).
+static const uint32_t MAX_CLICK_GAP_MS = 175;
 
 // Max total duration of a multi-click sequence, measured from the first release.
 // Conceptually: "the whole multi-click input has to complete within this window."
