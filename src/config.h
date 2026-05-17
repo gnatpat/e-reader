@@ -19,7 +19,7 @@
 
 #include "pure/arduino_compat.h"
 
-#define FW_VERSION "2.1b"
+#define FW_VERSION "2.1c"
 
 // BUILD_GIT_HASH is injected by scripts/build_info.py at PlatformIO build
 // time. Host-test builds skip that script, so provide a fallback so the

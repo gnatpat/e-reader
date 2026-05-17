@@ -195,6 +195,25 @@ static void handleUploadAppStream() {
   }
 }
 
+static void handleDeleteApp() {
+  if (!server.hasArg("name")) {
+    server.send(400, "text/plain; charset=utf-8", "missing name");
+    return;
+  }
+  String name = server.arg("name");
+  if (name.indexOf('/') >= 0 || name.indexOf('\\') >= 0 || !name.endsWith(".bin")) {
+    server.send(400, "text/plain; charset=utf-8", "invalid name");
+    return;
+  }
+  String path = String("/apps/") + name;
+  if (FS.exists(path)) FS.remove(path);
+  loadApps();   // refresh catalog so the next read sees the deletion
+
+  server.sendHeader("Location", "/files");
+  server.send(303);
+}
+
 void registerAppUploadRoutes() {
   server.on("/upload-app", HTTP_POST, handleUploadAppDone, handleUploadAppStream);
+  server.on("/del-app",    HTTP_POST, handleDeleteApp);   // POST: destructive
 }

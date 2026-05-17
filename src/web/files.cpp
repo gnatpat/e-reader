@@ -6,6 +6,7 @@
 #include "pure/paths.h"
 #include "storage/book_metadata.h"
 #include "storage/fs_util.h"
+#include "storage/app_catalog.h"
 #include "storage/library.h"
 #include "storage/preferences_store.h"
 #include "ui/text.h"            // pageOffsetForPage
@@ -137,6 +138,34 @@ static void handleFiles() {
   }
 
   out += "</div>";
+
+  out += "<div class='card'><h2>Apps</h2>";
+  if (g_apps.count == 0) {
+    out += "<p class='muted'>No apps installed.</p>";
+  } else {
+    out += "<ul class='list'>";
+    for (int i = 0; i < g_apps.count; i++) {
+      const char* absPath = g_apps.entries[i].path;
+      String fileName = lastPathComponent(String(absPath));
+      size_t sz = 0;
+      File af = FS.open(absPath, "r");
+      if (af) { sz = af.size(); af.close(); }
+
+      out += "<li><div class='row'><div><h3>";
+      out += htmlEscape(String(g_apps.entries[i].name));
+      out += "</h3><div class='meta'>";
+      out += String((int)sz);
+      out += " bytes &middot; ";
+      out += htmlEscape(fileName);
+      out += "</div></div><div><form method='POST' action='/del-app' style='display:inline'>";
+      out += "<input type='hidden' name='name' value='";
+      out += htmlEscape(fileName);
+      out += "'><button type='submit' class='btn secondary' onclick=\"return confirm('Delete app?')\">Delete</button></form></div></div></li>";
+    }
+    out += "</ul>";
+  }
+  out += "</div>";
+
   out += webPageEnd();
   server.send(200, "text/html; charset=utf-8", out);
 }
