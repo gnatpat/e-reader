@@ -158,7 +158,7 @@ void IRAM_ATTR btnISR() {
   uint8_t next = (uint8_t)((s_btnQ.head + 1) % BTN_Q);
   if (next == s_btnQ.tail) {
     s_btnQ.tail = (uint8_t)((s_btnQ.tail + 1) % BTN_Q);
-    s_btnQ.isrDropCount++;
+    s_btnQ.isrDropCount = s_btnQ.isrDropCount + 1;  // C++20 deprecates ++ on volatile
   }
   s_btnQ.state[s_btnQ.head] = (digitalRead(BTN) == LOW);
   s_btnQ.timeMs[s_btnQ.head] = isrNowMs();
@@ -174,7 +174,7 @@ void injectButtonEdgeNow(bool pressed) {
   uint8_t next = (uint8_t)((s_btnQ.head + 1) % BTN_Q);
   if (next == s_btnQ.tail) {
     s_btnQ.tail = (uint8_t)((s_btnQ.tail + 1) % BTN_Q);
-    s_btnQ.isrDropCount++;
+    s_btnQ.isrDropCount = s_btnQ.isrDropCount + 1;  // C++20 deprecates ++ on volatile
   }
   s_btnQ.state[s_btnQ.head] = pressed;
   s_btnQ.timeMs[s_btnQ.head] = isrNowMs();

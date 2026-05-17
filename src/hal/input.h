@@ -120,7 +120,9 @@ struct ButtonEvent {
 // ----------------------------------------------------------------------------
 //  Lifecycle / interrupt plumbing
 // ----------------------------------------------------------------------------
-void IRAM_ATTR btnISR();
+void btnISR();  // IRAM_ATTR is on the definition only — repeating it here
+                // makes GCC place the decl and defn in differently-suffixed
+                // .iram1.* sections, triggering an attribute-conflict warning.
 void clearButtonQueue();
 void resetInputFrontend();
 

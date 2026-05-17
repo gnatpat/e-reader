@@ -81,9 +81,13 @@ void enter() {
   Platform::prepareToSleep();
   esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
   // INPUT_PULLUP is in the digital IO domain, which powers down in deep sleep.
-  // Enable the RTC-domain pull-up so BTN doesn't float and spuriously wake us.
-  rtc_gpio_pullup_en((gpio_num_t)BTN);
+  // Route BTN to the RTC IO mux and hold the RTC-domain pull-up so the pin
+  // doesn't float and spuriously trip ext0. rtc_gpio_init must come before
+  // pullup_en or the pull bits land on the inactive (digital) mux.
+  rtc_gpio_init((gpio_num_t)BTN);
+  rtc_gpio_set_direction((gpio_num_t)BTN, RTC_GPIO_MODE_INPUT_ONLY);
   rtc_gpio_pulldown_dis((gpio_num_t)BTN);
+  rtc_gpio_pullup_en((gpio_num_t)BTN);
   esp_sleep_enable_ext0_wakeup((gpio_num_t)BTN, 0);
   delay(50);
   Serial.printf("[sleep] BTN=%d entering deep sleep\n", digitalRead(BTN));
