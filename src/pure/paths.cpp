@@ -104,3 +104,37 @@ String sanitizeUploadedFilename(String fname) {
   if (clean.length() == 0) clean = "book.txt";
   return clean;
 }
+
+String sanitizeUploadedAppFilename(String fname) {
+  int slash = fname.lastIndexOf('/');
+  if (slash >= 0) fname = fname.substring(slash + 1);
+  int back  = fname.lastIndexOf('\\');
+  if (back >= 0)  fname = fname.substring(back + 1);
+
+  // Strip all extensions so "foo.tar.bin" → "foo" (then we re-add .bin
+  // below). Belt-and-braces against double-extension confusion.
+  int dot = fname.lastIndexOf('.');
+  while (dot > 0) { fname = fname.substring(0, dot); dot = fname.lastIndexOf('.'); }
+
+  String clean;
+  clean.reserve(fname.length() + 4);
+  for (size_t i = 0; i < fname.length(); i++) {
+    uint8_t c = (uint8_t)fname[i];
+    if ((c >= 'a' && c <= 'z') ||
+        (c >= 'A' && c <= 'Z') ||
+        (c >= '0' && c <= '9') ||
+        c == '_' || c == '-') {
+      clean += (char)c;
+    } else if (c == ' ') {
+      clean += '_';
+    } else {
+      clean += '_';
+    }
+  }
+
+  clean.replace("..", "");
+  while (clean.startsWith(".")) clean.remove(0, 1);
+  if (clean.length() == 0) clean = "app";
+  clean += ".bin";
+  return clean;
+}

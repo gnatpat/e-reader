@@ -25,6 +25,11 @@ void useBold();
 void useUiSmall();
 void useUiTiny();
 
+// Big-display bold (Helvetica B14). Exposed for the Pala apps API's
+// `drawCenteredLarge` — firmware screens use Body/Bold under the
+// user-chosen size and don't reach for this directly.
+void useAppLarge();
+
 // Layout metrics for the body font under the current line gap and screen
 // dimensions. Cached; invalidated automatically by the mutators below.
 // Calling this leaves the active u8g2 font set to Body.

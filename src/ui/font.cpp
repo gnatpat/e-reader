@@ -53,10 +53,11 @@ static void applyLineGap(int gap) {
   s_layoutValid = false;
 }
 
-void useBody()    { u8g2.setFont(s_body); }
-void useBold()    { u8g2.setFont(s_bold); }
-void useUiSmall() { u8g2.setFont(s_uiSmall); }
-void useUiTiny()  { u8g2.setFont(s_uiTiny); }
+void useBody()     { u8g2.setFont(s_body); }
+void useBold()     { u8g2.setFont(s_bold); }
+void useUiSmall()  { u8g2.setFont(s_uiSmall); }
+void useUiTiny()   { u8g2.setFont(s_uiTiny); }
+void useAppLarge() { u8g2.setFont(u8g2_font_helvB14_te); }
 
 const LayoutMetrics& bodyLayout() {
   if (!s_layoutValid) {

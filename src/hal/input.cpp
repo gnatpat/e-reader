@@ -291,6 +291,10 @@ void ButtonState::poll() {
           clickCount_ = 0;
           longClick_ = true;
         } else {
+          // Bump the apps-API raw counter *before* the multi-click
+          // accumulator, so apps see every short release even when the
+          // classifier later groups them into a double/triple.
+          rawPressCount_++;
           clickCount_++;
           lastRelease_ = edgeTime;
           if (clickCount_ == 1) firstClickRelease_ = edgeTime;
@@ -355,6 +359,26 @@ void ButtonState::poll() {
       else if (clickCount_ >= 4) quadClick_   = true;
       clickCount_ = 0;
     }
+  }
+}
+
+ButtonEvent waitForNextEvent() {
+  markUserActivity();
+  while (true) {
+    g_btns.poll();
+    maybeRecoverFromIsrOverflow();
+    ButtonEvent e = ButtonEvent::fromButtonState(g_btns);
+    if (e.any()) {
+      // Consume the flag we're about to return so the next call doesn't
+      // re-see it. (`poll()` clears flags at its top, so a same-tick
+      // re-entry would already be empty, but `resetClicks()` here makes
+      // the contract explicit and protects against callers that loop
+      // tighter than poll's tick boundaries.)
+      g_btns.resetClicks();
+      markUserActivity();
+      return e;
+    }
+    delay(1);
   }
 }
 

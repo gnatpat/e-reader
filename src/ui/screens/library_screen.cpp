@@ -8,6 +8,7 @@
 #include "ui/font.h"
 #include "ui/reader.h"
 #include "ui/screens/about_screen.h"
+#include "ui/screens/apps_screen.h"
 #include "ui/screens/bookmarks/book_select_screen.h"
 #include "ui/screens/bookmarks/session.h"
 #include "ui/screens/list_screen.h"
@@ -102,6 +103,7 @@ static void toggleExpanded(const char* name) {
 // ----------------------------------------------------------------------------
 static bool isSystemEntryType(LibraryEntryType t) {
   return t == LIB_ENTRY_BOOKMARKS || t == LIB_ENTRY_LIST
+      || t == LIB_ENTRY_APPS
       || t == LIB_ENTRY_ABOUT || t == LIB_ENTRY_UPLOAD;
 }
 
@@ -120,6 +122,7 @@ static String entryLabel(const LibEntry& e) {
     case LIB_ENTRY_BOOK:      return bookLeafLabel(String(g_library.books[e.ref].path));
     case LIB_ENTRY_BOOKMARKS: return "Bookmarks";
     case LIB_ENTRY_LIST:      return "List";
+    case LIB_ENTRY_APPS:      return "Apps";
     case LIB_ENTRY_ABOUT:     return "Device";
     case LIB_ENTRY_UPLOAD:    return "Upload";
   }
@@ -150,10 +153,11 @@ void LibraryScreen::draw() {
 
   // Decide which system entries to show. "List" only appears when the
   // todo list has visible items; the rest are always present.
-  LibraryEntryType systemEntries[4];
+  LibraryEntryType systemEntries[5];
   int systemCount = 0;
   systemEntries[systemCount++] = LIB_ENTRY_BOOKMARKS;
   if (listHasVisibleItems()) systemEntries[systemCount++] = LIB_ENTRY_LIST;
+  systemEntries[systemCount++] = LIB_ENTRY_APPS;
   systemEntries[systemCount++] = LIB_ENTRY_ABOUT;
   systemEntries[systemCount++] = LIB_ENTRY_UPLOAD;
 
@@ -226,6 +230,11 @@ void LibraryScreen::onButton(const ButtonEvent& e) {
   if (sel.type == LIB_ENTRY_LIST) {
     g_list.selectedIndex = 0;
     nextScreen = &g_listScreen;
+    return;
+  }
+
+  if (sel.type == LIB_ENTRY_APPS) {
+    nextScreen = &g_appsScreen;
     return;
   }
 

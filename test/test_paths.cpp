@@ -77,3 +77,23 @@ TEST_CASE("sanitizeUploadedFilename") {
   // Numeric, punctuation in middle stays as filename
   CHECK(sanitizeUploadedFilename("a1-b2.txt") == "a1-b2.txt");
 }
+
+TEST_CASE("sanitizeUploadedAppFilename") {
+  CHECK(sanitizeUploadedAppFilename("simple.bin") == "simple.bin");
+  CHECK(sanitizeUploadedAppFilename("no_ext") == "no_ext.bin");
+  CHECK(sanitizeUploadedAppFilename("path/to/click_counter.bin") == "click_counter.bin");
+  CHECK(sanitizeUploadedAppFilename("C:\\windows\\path\\app.bin") == "app.bin");
+  CHECK(sanitizeUploadedAppFilename("") == "app.bin");
+  // Double extension: stripped down to the stem, then .bin re-added.
+  CHECK(sanitizeUploadedAppFilename("foo.tar.bin") == "foo.bin");
+  // Disallowed chars (including spaces and punctuation) collapse to '_'.
+  CHECK(sanitizeUploadedAppFilename("my app!.bin") == "my_app_.bin");
+  // Leading dot: the ext-strip loop only strips the *trailing* extension
+  // ("dot > 0", not >= 0), so ".hidden.bin" becomes ".hidden" after
+  // strip. The byte filter then replaces '.' with '_' → "_hidden".
+  // Hidden-file-like names can't sneak through as actual dot-prefixed
+  // files on disk.
+  CHECK(sanitizeUploadedAppFilename(".hidden.bin") == "_hidden.bin");
+  // Mixed legal punctuation survives.
+  CHECK(sanitizeUploadedAppFilename("a1-b2.bin") == "a1-b2.bin");
+}

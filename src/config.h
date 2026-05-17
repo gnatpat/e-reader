@@ -19,7 +19,7 @@
 
 #include "pure/arduino_compat.h"
 
-#define FW_VERSION "2.1a"
+#define FW_VERSION "2.1b"
 
 // BUILD_GIT_HASH is injected by scripts/build_info.py at PlatformIO build
 // time. Host-test builds skip that script, so provide a fallback so the
@@ -55,6 +55,19 @@ static const int MAX_PAGES = 10000;
 static const int MAX_LIBRARY_ENTRIES = (MAX_BOOKS * 2) + (MAX_FOLDERS * 2) + 8;
 static const int MAX_LIST_ITEMS = 16;
 static const int MAX_LIST_TEXT = 64;
+
+// Apps catalog upper bounds. Match the field widths in PalaAppHeader.name
+// (32) and a generous absolute-path limit for /apps/<filename>.bin (80).
+static const int MAX_APPS = 16;
+static const int MAX_APP_NAME = 32;
+static const int MAX_APP_PATH = 80;
+
+// Largest app binary the loader will accept. Caps RAM exposure from a
+// malformed/oversized upload: the loader allocates MALLOC_CAP_EXEC heap
+// of exactly fileSize bytes, so this bounds the worst-case footprint.
+// 48 KB matches the value the original monolithic firmware used; revisit
+// after measuring free exec-capable heap on a real device.
+static const size_t MAX_APP_BINARY = 48u * 1024u;
 
 // Max silence after the most recent release before we commit a click sequence.
 // The press-in-progress gate in input.cpp's trailing-silence check means this

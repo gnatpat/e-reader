@@ -1,5 +1,6 @@
 #include "web/web.h"
 
+#include "web/apps_upload.h"
 #include "web/bookmarks.h"
 #include "web/chrome.h"
 #include "web/files.h"
@@ -21,5 +22,6 @@ void registerWebRoutes() {
   registerListRoutes();        // /list, /list-clear-done
   registerSettingsRoutes();    // /settings, /del-sleep
   registerUploadRoutes();      // /upload, /upload-sleep
+  registerAppUploadRoutes();   // /upload-app
   registerResetRoutes();       // /reset
 }

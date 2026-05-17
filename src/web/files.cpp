@@ -51,6 +51,14 @@ static void handleRoot() {
     "<div class='actions'><button type='submit'>Upload</button><a class='btn secondary' href='/files'>Manage files</a></div>"
     "</form></div>";
 
+  out +=
+    "<div class='card'><h2>Install app</h2>"
+    "<p class='muted'>Upload a Pala app binary (<b>.bin</b>) to <b>/apps</b>. The header is validated before commit; only files with the correct magic and API version are accepted. Open <b>Apps</b> from the library to launch.</p>"
+    "<form method='POST' action='/upload-app' enctype='multipart/form-data' style='margin-top:14px'>"
+    "<input type='file' name='file' accept='.bin' required>"
+    "<div class='actions'><button type='submit'>Install app</button></div>"
+    "</form></div>";
+
   out += "<div class='card'><h2>Notes</h2><p class='muted'>Uploaded books are normalized and compacted before saving, so a source TXT can be larger than the final stored file. The reader is optimized for UTF-8 plain text and Latin-based languages.</p></div>";
 
   out += webPageEnd();

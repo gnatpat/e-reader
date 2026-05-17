@@ -55,6 +55,17 @@ The firmware is laid out so that logic is testable on a laptop and hardware code
 - **`scripts/build_info.py`** — PlatformIO pre-build script that injects the current git short hash as a `-D` macro.
 - **`docs/`** — architecture notes and refactor journal.
 
+## Apps
+
+Pala One supports user-installable apps — self-contained position-independent
+C binaries that run on top of the firmware and have access to the display,
+button, RTC, and a per-app key-value store. Apps are uploaded over Wi-Fi
+through the same web UI used for books, and they appear under the **Apps**
+entry of the library menu. No firmware rebuild is needed to install one.
+
+See [docs/APPS.md](docs/APPS.md) for the full app-author guide — binary
+format, the `PalaAPI` (v3), required compiler flags, and upload steps.
+
 ## Hardware
 
 Pala One is based on:

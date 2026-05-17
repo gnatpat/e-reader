@@ -39,6 +39,13 @@ struct ButtonState {
   bool quadClick_ = false;
   bool longClick_ = false;
 
+  // Count of accepted short press-release pairs since the last
+  // `consumePressCount()` call. Bypasses multi-click grouping — every
+  // release that the classifier accepted (long-press releases excluded)
+  // bumps this counter. Surfaced for the Pala apps API; firmware code
+  // uses the click flags above instead.
+  uint32_t rawPressCount_ = 0;
+
   void resetClicks() {
     shortClick_ = false;
     doubleClick_ = false;
@@ -55,7 +62,25 @@ struct ButtonState {
     lastRelease_ = 0;
     firstClickRelease_ = 0;
     clickCount_ = 0;
+    rawPressCount_ = 0;
     resetClicks();
+  }
+
+  // Apps-API accessors. Hidden from firmware-side callers (the click
+  // flags + `ButtonEvent::fromButtonState` are richer); these exist so
+  // the PalaAPI shim has a stable, non-poking surface to wrap.
+
+  // Is the button physically held down right now? Reads the debounced
+  // state; matches the old `api_buttonPressed`.
+  bool isPressed() const { return stablePressed_; }
+
+  // Returns the accumulated raw short-press count and resets it to zero
+  // atomically (from the caller's view — `poll()` doesn't run during
+  // this call). Matches the old `api_pendingPresses`.
+  uint32_t consumePressCount() {
+    uint32_t n = rawPressCount_;
+    rawPressCount_ = 0;
+    return n;
   }
 
   bool anyClick() const {
@@ -128,3 +153,18 @@ void markUserActivity();
 // Milliseconds since the most recent accepted user input. The sleep
 // deadline check in main.cpp compares this against Sleep::idleTimeoutMs().
 uint32_t userIdleMs();
+
+// Block the calling task until the classifier emits any click event,
+// then return it. Drives the apps API's `waitForEvent`; firmware code
+// stays event-driven via the main loop and does not call this.
+//
+// Implementation: a tight `poll()` + 1ms-delay loop, same shape as
+// `loop()` itself except it doesn't dispatch screens or gate sleep.
+// While this blocks, the main loop is paused — sleep timeouts, screen
+// redraws, and ISR-overflow recovery are all on hold until the user
+// presses something. That's intentional: apps are short-lived foreground
+// work and own the device for their duration.
+//
+// Marks user activity on both entry and exit so the deep-sleep deadline
+// is fresh whenever the app returns to the host.
+ButtonEvent waitForNextEvent();

@@ -12,6 +12,7 @@
 struct UploadState {
   File bookTmpFile;
   File sleepTmpFile;
+  File appTmpFile;
 
   String bookTmpPath;
   String bookPendingUtf8Tail;
@@ -22,6 +23,14 @@ struct UploadState {
   String sleepTmpPath;
   bool sleepOk = false;
   String sleepError;
+
+  // App .bin upload — same shape as book/sleep, third sibling field set.
+  // Not pretty (per-type fields rather than a discriminated union) but the
+  // rewrite hasn't generalized UploadState yet; see docs/APPS_LAYER.md §8.
+  String appTmpPath;
+  String appFinalName;
+  bool appOk = false;
+  String appError;
 
   uint32_t startedMs = 0;
 };

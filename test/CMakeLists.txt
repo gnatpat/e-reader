@@ -21,6 +21,7 @@ set(SUT_SRC
   ${CMAKE_SOURCE_DIR}/../src/pure/bookmark_label.cpp
   ${CMAKE_SOURCE_DIR}/../src/pure/bookmarks_codec.cpp
   ${CMAKE_SOURCE_DIR}/../src/pure/list_codec.cpp
+  ${CMAKE_SOURCE_DIR}/../src/pure/app_header.cpp
   ${CMAKE_SOURCE_DIR}/../src/storage/book_metadata.cpp
   ${CMAKE_SOURCE_DIR}/../src/storage/list_items.cpp
 )
@@ -37,11 +38,13 @@ set(TEST_SRC
   ${CMAKE_CURRENT_SOURCE_DIR}/test_list_codec.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/test_bookmarks_store.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/test_list_store.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/test_app_header.cpp
 )
 
 add_executable(host_tests ${SUT_SRC} ${TEST_SRC})
 target_include_directories(host_tests PRIVATE
   ${CMAKE_SOURCE_DIR}/../src
+  ${CMAKE_SOURCE_DIR}/../apps/include
   ${CMAKE_CURRENT_SOURCE_DIR}
 )
 

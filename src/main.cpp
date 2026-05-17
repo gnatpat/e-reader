@@ -7,15 +7,18 @@
 #include "hal/display.h"
 #include "hal/input.h"
 #include "pure/hashing.h"
+#include "storage/app_catalog.h"
 #include "storage/fs_util.h"
 #include "storage/library.h"
 #include "storage/list_items.h"
 #include "storage/page_cache.h"
 #include "ui/font.h"
+#include "ui/pala_api_impl.h"
 #include "ui/reader.h"
 #include "ui/screen.h"
 #include "ui/widgets.h"  // drawCenter
 #include "ui/screens/about_screen.h"
+#include "ui/screens/apps_screen.h"
 #include "ui/screens/bookmarks/book_select_screen.h"
 #include "ui/screens/bookmarks/bookmark_list_screen.h"
 #include "ui/screens/bookmarks/preview_screen.h"
@@ -35,6 +38,7 @@ LibraryScreen              g_libraryScreen;
 ReaderScreen               g_readerScreen;
 UploadScreen               g_uploadScreen;
 AboutScreen                g_aboutScreen;
+AppsScreen                 g_appsScreen;
 ListScreen                 g_listScreen;
 BookmarkBookSelectScreen   g_bmBookSelectScreen;
 BookmarkListScreen         g_bmListScreen;
@@ -81,6 +85,8 @@ void setup() {
   Sleep::loadSettings();
   loadBooks();
   loadListItems();
+  loadApps();
+  initPalaAPI();
   registerWebRoutes();
   markUserActivity();
 

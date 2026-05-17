@@ -540,6 +540,15 @@ callers pass the values explicitly. Slightly more verbose at the call
 site, but the contract — "this cache is valid only under this layout" —
 is now visible at every call.
 
+### Known-failing test
+
+- `test_text_util.cpp::"compactText limits consecutive newlines to two"`
+  has been failing on `main` for at least as long as the apps-layer work
+  has been going on. Both two-newline cases (4→2 and 2→2) come back
+  wrong; the one-newline case passes, so the regression is in the
+  collapse path of `compactText`. See the FIXME above the test for the
+  diagnosis hand-off.
+
 ### Smaller follow-ups noted along the way
 
 - **Drop page number from bookmark storage.** Today bookmarks store
