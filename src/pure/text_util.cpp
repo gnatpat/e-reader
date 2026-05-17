@@ -102,9 +102,10 @@ String compactText(const String& in) {
 
   bool lastWasSpace = false;
   int newlineCount = 0;
-  // Length of `out` up to (and including) its last non-space, non-newline
-  // byte. Trailing-space trimming on newline becomes an O(1) truncate to
-  // this anchor instead of an O(k) per-char remove loop.
+  // Length of `out` up to (and including) its last non-space byte —
+  // newlines count as non-space here. Lets newline emission strip
+  // trailing spaces in O(1) without clobbering previously-emitted
+  // newlines (which would break the "collapse runs to two" rule).
   size_t trimAnchor = 0;
 
   for (size_t i = 0; i < in.length(); i++) {
@@ -116,7 +117,10 @@ String compactText(const String& in) {
     if (c == '\n') {
       if (out.length() > trimAnchor) out.remove(trimAnchor);
       newlineCount++;
-      if (newlineCount <= 2) out += '\n';
+      if (newlineCount <= 2) {
+        out += '\n';
+        trimAnchor = out.length();
+      }
       lastWasSpace = false;
       continue;
     }
@@ -136,7 +140,11 @@ String compactText(const String& in) {
     trimAnchor = out.length();
   }
 
-  if (out.length() > trimAnchor) out.remove(trimAnchor);
+  while (out.length() > 0) {
+    char last = out[out.length() - 1];
+    if (last != ' ' && last != '\n') break;
+    out.remove(out.length() - 1);
+  }
 
   return out;
 }

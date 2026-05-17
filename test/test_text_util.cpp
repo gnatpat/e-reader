@@ -77,13 +77,6 @@ TEST_CASE("compactText strips \\r") {
   CHECK_EQ(compactText("a\r\nb"), String("a\nb"));
 }
 
-// FIXME: this test is currently failing — both two-newline cases
-// (4→2 and 2→2) produce something other than `"a\n\nb"`. Pre-existed
-// on `main` before the apps-layer work started; not caused by it.
-// Investigate when touching `compactText` next: either the implementation
-// lost the "limit to two" rule, or the rule changed deliberately and this
-// test wasn't updated. The `a\nb` (no collapse needed) case still passes,
-// so the bug is in the collapse path, not the byte-walking.
 TEST_CASE("compactText limits consecutive newlines to two") {
   CHECK_EQ(compactText("a\n\n\n\nb"), String("a\n\nb"));
   CHECK_EQ(compactText("a\n\nb"), String("a\n\nb"));
